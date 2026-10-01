@@ -45,6 +45,7 @@ from homeassistant.util import slugify
 from .adapters import Write, generic, schwoerer
 from .const import (
     CONF_ACTUATOR,
+    CONF_BYPASS_SENSOR,
     CONF_CLIMATE_ENTITY,
     CONF_CO2_SENSOR,
     CONF_COMPRESSOR_SENSOR,
@@ -360,6 +361,23 @@ class ClimateControlCoordinator(DataUpdateCoordinator[SystemDecision]):
             compressor_running=self._compressor(),
             rooms=rooms,
         )
+
+    def number_value(self, entity_id: str | None) -> float | None:
+        """One numeric reading as a plain float, for things outside the engine."""
+        reading = self._number(entity_id)
+        return None if reading is None else reading.as_number()
+
+    @property
+    def bypass_open(self) -> bool | None:
+        """Whether register 123 reports the damper open, if it was configured.
+
+        Read and reported, never written: there is no write register for it on
+        any known firmware.
+        """
+        reading = self._state_reading(self.hub_config.get(CONF_BYPASS_SENSOR))
+        if reading is None or reading.missing:
+            return None
+        return str(reading.value).startswith("open")
 
     @property
     def operation_mode(self) -> str | None:

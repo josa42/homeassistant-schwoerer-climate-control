@@ -11,11 +11,23 @@ from __future__ import annotations
 
 from typing import Any
 
-from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
+from homeassistant.components.sensor import (
+    SensorDeviceClass,
+    SensorEntity,
+    SensorStateClass,
+)
+from homeassistant.const import PERCENTAGE
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .const import SUBENTRY_TYPE_ROOM, Intent, RoomIntent
+from .const import (
+    CONF_EXTRACT_TEMPERATURE_SENSOR,
+    CONF_OUTDOOR_SENSOR,
+    CONF_SUPPLY_TEMPERATURE_SENSOR,
+    SUBENTRY_TYPE_ROOM,
+    Intent,
+    RoomIntent,
+)
 from .coordinator import (
     ClimateControlConfigEntry,
     ClimateControlCoordinator,
@@ -23,6 +35,7 @@ from .coordinator import (
 )
 from .entity import HubEntity, RoomEntity
 from .models import UNRECORDED_ATTRIBUTES, RoomDecision
+from .recovery import Recovery, measure
 
 
 async def async_setup_entry(
@@ -31,7 +44,22 @@ async def async_setup_entry(
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     coordinator = entry.runtime_data
-    async_add_entities([SystemDecisionSensor(coordinator)])
+    entities: list[SensorEntity] = [SystemDecisionSensor(coordinator)]
+
+    # The bypass can only be watched, and only when all three temperatures are
+    # configured. Without them there is nothing to say about it, and a sensor
+    # that is always unknown says something it does not mean.
+    config = coordinator.hub_config
+    if all(
+        config.get(key)
+        for key in (
+            CONF_SUPPLY_TEMPERATURE_SENSOR,
+            CONF_EXTRACT_TEMPERATURE_SENSOR,
+            CONF_OUTDOOR_SENSOR,
+        )
+    ):
+        entities.append(HeatRecoverySensor(coordinator))
+    async_add_entities(entities)
 
     for subentry_id, subentry in entry.subentries.items():
         if subentry.subentry_type != SUBENTRY_TYPE_ROOM:
@@ -108,4 +136,46 @@ class RoomDecisionSensor(RoomEntity, SensorEntity):
             "gates": [gate.as_dict() for gate in decision.gates],
             "inputs": decision.inputs,
             "settings": decision.settings,
+        }
+
+
+class HeatRecoverySensor(HubEntity, SensorEntity):
+    """How much heat the exchanger recovers, which is how the bypass is judged.
+
+    The damper cannot be commanded, so this is the controller's whole part in it:
+    report what the air is doing. Open and recovering fully means the air is going
+    through the core either way, and that is a fault in the bypass path rather
+    than anything the controller did or failed to do.
+    """
+
+    _attr_native_unit_of_measurement = PERCENTAGE
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_suggested_display_precision = 0
+
+    def __init__(self, coordinator: ClimateControlCoordinator) -> None:
+        super().__init__(coordinator, "heat_recovery")
+
+    def _measure(self) -> Recovery:
+        config = self.coordinator.hub_config
+        read = self.coordinator.number_value
+        return measure(
+            read(config.get(CONF_SUPPLY_TEMPERATURE_SENSOR)),
+            read(config.get(CONF_EXTRACT_TEMPERATURE_SENSOR)),
+            read(config.get(CONF_OUTDOOR_SENSOR)),
+            self.coordinator.bypass_open,
+        )
+
+    @property
+    def native_value(self) -> float | None:
+        recovery = self._measure()
+        return None if recovery.ratio is None else round(recovery.ratio * 100, 1)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        recovery = self._measure()
+        return {
+            "gradient": recovery.gradient,
+            "meaningful": recovery.meaningful,
+            "bypass_open": recovery.bypass_open,
+            "bypass_effective": recovery.effective,
         }

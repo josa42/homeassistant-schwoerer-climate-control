@@ -15,7 +15,10 @@
           "forecast_entity": "Weather forecast",
           "pv_sensor": "PV power",
           "notify_service": "Notification service",
-          "dry_run": "Dry run"
+          "dry_run": "Dry run",
+          "supply_temperature_sensor": "Supply air temperature (T3)",
+          "extract_temperature_sensor": "Extract air temperature (T5)",
+          "bypass_sensor": "Bypass state"
         },
         "data_description": {
           "operation_mode_select": "Only read, never written. The decisions assume the unit is in manual mode, and a repair is raised when it is not.",
@@ -23,7 +26,10 @@
           "forecast_entity": "Optional. Lets a cold morning under a warm forecast skip the heat pump.",
           "pv_sensor": "Optional. Raises setpoints while a surplus is available.",
           "notify_service": "Optional, for example notify.mobile_app_phone. Messages are gathered for five minutes.",
-          "dry_run": "Everything is decided and published, nothing is written. On for a fresh install."
+          "dry_run": "Everything is decided and published, nothing is written. On for a fresh install.",
+          "supply_temperature_sensor": "Optional. With the extract air and the outdoor reading, this is what says whether the bypass is moving any air at all.",
+          "extract_temperature_sensor": "Optional. The air leaving the house, which is what there is to recover from.",
+          "bypass_sensor": "Optional, and read only. There is no write register for the damper on any known firmware."
         }
       }
     },
@@ -53,7 +59,10 @@
           "forecast_entity": "Weather forecast",
           "pv_sensor": "PV power",
           "notify_service": "Notification service",
-          "dry_run": "Dry run"
+          "dry_run": "Dry run",
+          "supply_temperature_sensor": "Supply air temperature (T3)",
+          "extract_temperature_sensor": "Extract air temperature (T5)",
+          "bypass_sensor": "Bypass state"
         },
         "data_description": {
           "operation_mode_select": "Only read, never written. The decisions assume the unit is in manual mode, and a repair is raised when it is not.",
@@ -61,7 +70,10 @@
           "forecast_entity": "Optional. Lets a cold morning under a warm forecast skip the heat pump.",
           "pv_sensor": "Optional. Raises setpoints while a surplus is available.",
           "notify_service": "Optional, for example notify.mobile_app_phone. Messages are gathered for five minutes.",
-          "dry_run": "Everything is decided and published, nothing is written. On for a fresh install."
+          "dry_run": "Everything is decided and published, nothing is written. On for a fresh install.",
+          "supply_temperature_sensor": "Optional. With the extract air and the outdoor reading, this is what says whether the bypass is moving any air at all.",
+          "extract_temperature_sensor": "Optional. The air leaving the house, which is what there is to recover from.",
+          "bypass_sensor": "Optional, and read only. There is no write register for the damper on any known firmware."
         }
       },
       "thresholds": {
@@ -226,6 +238,9 @@
           "normal": "Normal",
           "idle": "Idle"
         }
+      },
+      "heat_recovery": {
+        "name": "Heat recovery"
       }
     },
     "binary_sensor": {

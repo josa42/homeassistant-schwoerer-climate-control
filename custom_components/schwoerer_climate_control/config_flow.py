@@ -30,6 +30,7 @@ from .const import (
     CONF_ACTUATOR,
     CONF_AUX_HEAT_BELOW,
     CONF_AUX_HEAT_OFF_AT_NIGHT,
+    CONF_BYPASS_SENSOR,
     CONF_CLIMATE_ENTITY,
     CONF_CO2_HIGH,
     CONF_CO2_SENSOR,
@@ -38,6 +39,7 @@ from .const import (
     CONF_COOL_RELEASE_ABOVE,
     CONF_COOL_RELEASE_SWITCH,
     CONF_DRY_RUN,
+    CONF_EXTRACT_TEMPERATURE_SENSOR,
     CONF_FAN_AIR_QUALITY,
     CONF_FAN_BOOST,
     CONF_FAN_HOLIDAY,
@@ -64,6 +66,7 @@ from .const import (
     CONF_PV_SURPLUS_ABOVE,
     CONF_PV_TARGET_BOOST,
     CONF_RELEASE_HYSTERESIS,
+    CONF_SUPPLY_TEMPERATURE_SENSOR,
     CONF_TARGET_COOL,
     CONF_TARGET_COOL_HOLIDAY,
     CONF_TARGET_COOL_WINDOW_OPEN,
@@ -130,6 +133,9 @@ def unit_schema(values: Mapping[str, Any]) -> vol.Schema:
     for key, field in required.items():
         schema[vol.Required(key, description=_suggest(key, values))] = field
 
+    for key in (CONF_SUPPLY_TEMPERATURE_SENSOR, CONF_EXTRACT_TEMPERATURE_SENSOR):
+        _optional(schema, key, values, _entity("sensor", device_class="temperature"))
+    _optional(schema, CONF_BYPASS_SENSOR, values, _entity("sensor"))
     _optional(schema, CONF_FORECAST_ENTITY, values, _entity("weather"))
     _optional(schema, CONF_PV_SENSOR, values, _entity("sensor", device_class="power"))
     _optional(schema, CONF_NOTIFY_SERVICE, values, selector.TextSelector())
@@ -261,6 +267,9 @@ UNIT_KEYS: tuple[str, ...] = (
     CONF_FUNCTION_SELECT,
     CONF_COMPRESSOR_SENSOR,
     CONF_OPERATION_MODE_SELECT,
+    CONF_SUPPLY_TEMPERATURE_SENSOR,
+    CONF_EXTRACT_TEMPERATURE_SENSOR,
+    CONF_BYPASS_SENSOR,
     CONF_FORECAST_ENTITY,
     CONF_PV_SENSOR,
     CONF_NOTIFY_SERVICE,

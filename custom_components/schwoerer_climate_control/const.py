@@ -220,6 +220,12 @@ CONF_COMPRESSOR_SENSOR = "compressor_sensor"
 #: says so when it is not.
 CONF_OPERATION_MODE_SELECT = "operation_mode_select"
 
+# The bypass, which can only be observed. Optional, and all three are needed
+# before anything can be said about it.
+CONF_SUPPLY_TEMPERATURE_SENSOR = "supply_temperature_sensor"
+CONF_EXTRACT_TEMPERATURE_SENSOR = "extract_temperature_sensor"
+CONF_BYPASS_SENSOR = "bypass_sensor"
+
 # Optional extra inputs.
 CONF_FORECAST_ENTITY = "forecast_entity"
 CONF_PV_SENSOR = "pv_sensor"

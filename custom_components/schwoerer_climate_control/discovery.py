@@ -18,13 +18,16 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 
 from .const import (
+    CONF_BYPASS_SENSOR,
     CONF_COMPRESSOR_SENSOR,
     CONF_COOL_RELEASE_SWITCH,
+    CONF_EXTRACT_TEMPERATURE_SENSOR,
     CONF_FAN_SELECT,
     CONF_FUNCTION_SELECT,
     CONF_HEAT_RELEASE_SWITCH,
     CONF_OPERATION_MODE_SELECT,
     CONF_OUTDOOR_SENSOR,
+    CONF_SUPPLY_TEMPERATURE_SENSOR,
 )
 
 #: Our configuration key against the entity_type the ventilation integration
@@ -37,6 +40,9 @@ UNIT_ENTITY_TYPES: dict[str, str] = {
     CONF_HEAT_RELEASE_SWITCH: "heat_pump_heating_enabled",
     CONF_COOL_RELEASE_SWITCH: "heat_pump_cooling_enabled",
     CONF_COMPRESSOR_SENSOR: "heat_pump_status",
+    CONF_SUPPLY_TEMPERATURE_SENSOR: "temperature_t3_before_reheater",
+    CONF_EXTRACT_TEMPERATURE_SENSOR: "temperature_t5_exhaust_air",
+    CONF_BYPASS_SENSOR: "bypass_state",
 }
 
 ROOM_CLIMATE_TYPE = "climate_room"
