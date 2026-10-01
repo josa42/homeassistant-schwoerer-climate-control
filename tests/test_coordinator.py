@@ -178,7 +178,7 @@ async def test_the_entities_appear(hass: HomeAssistant, entry, unit, setup_entry
         "select.schworer_climate_control_mode",
         "select.schworer_climate_control_fan",
         "sensor.schworer_climate_control_decision",
-        "binary_sensor.schworer_climate_control_degraded",
+        "binary_sensor.schworer_climate_control_inputs_missing",
         "sensor.wohnzimmer_decision",
     ):
         assert hass.states.get(entity_id) is not None, entity_id
@@ -208,16 +208,21 @@ async def test_the_room_sensor_says_what_its_setpoint_is_for(
     assert state.attributes["settings"]["target_normal"]["source"] == "default"
 
 
-async def test_a_dead_contact_shows_up_as_degraded(
+async def test_a_dead_contact_is_named_on_the_missing_inputs_sensor(
     hass: HomeAssistant, entry, unit, setup_entry
 ) -> None:
     unit(contact="unavailable")
     await setup_entry(entry)
 
-    degraded = hass.states.get("binary_sensor.schworer_climate_control_degraded")
-    assert degraded is not None
-    assert degraded.state == "on"
-    assert degraded.attributes["failed_inputs"] == ["wohnzimmer.contact[0]"]
+    missing = hass.states.get("binary_sensor.schworer_climate_control_inputs_missing")
+    assert missing is not None
+    assert missing.state == "on"
+    assert missing.attributes["failed_inputs"] == ["wohnzimmer.contact[0]"]
+
+    # The same thing is called the same thing on the decision sensor.
+    decision = hass.states.get("sensor.schworer_climate_control_decision")
+    assert decision is not None
+    assert decision.attributes["failed_inputs"] == ["wohnzimmer.contact[0]"]
 
 
 @pytest.mark.parametrize("mode", ["winter", "summer", "off"])

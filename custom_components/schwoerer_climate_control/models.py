@@ -180,7 +180,7 @@ class RoomDecision:
             "heating_enabled": self.heating_enabled,
             "window_open": self.window_open,
             "room_temperature": self.inputs.get("temperature", {}).get("value"),
-            "degraded": list(self.degraded),
+            "failed_inputs": list(self.degraded),
         }
 
     @property
@@ -213,7 +213,7 @@ class RoomDecision:
             "gates": [gate.as_dict() for gate in self.gates],
             "inputs": self.inputs,
             "settings": self.settings,
-            "degraded": list(self.degraded),
+            "failed_inputs": list(self.degraded),
         }
 
 
@@ -274,7 +274,7 @@ class SystemDecision:
             "fan_capped_from": self.fan_capped_from,
             "is_night": self.is_night,
             "outdoor_temperature": self.inputs.get("outdoor", {}).get("value"),
-            "degraded": list(self.degraded),
+            "failed_inputs": list(self.degraded),
         }
 
     @property
@@ -314,6 +314,6 @@ class SystemDecision:
             "gates": [gate.as_dict() for gate in self.gates],
             "inputs": self.inputs,
             "settings": self.settings,
-            "degraded": list(self.degraded),
+            "failed_inputs": list(self.degraded),
             "rooms": [room.as_dict() for room in self.rooms],
         }

@@ -117,7 +117,7 @@ reaches the unit.
 
 | Device | Entities |
 | --- | --- |
-| Central | Active, holiday and dry run switches, mode and fan selects, decision sensor, degraded indicator, heat recovery sensor |
+| Central | Active, holiday and dry run switches, mode and fan selects, decision sensor, inputs-missing indicator, heat recovery sensor |
 | Each room | Decision sensor |
 
 **Active** off means no register is written at all. The unit keeps running on its
@@ -141,6 +141,14 @@ appear.
 The **diagnostics** download has the full trace, plus the writes the controller
 would send right now and whether each is needed, which is the answer to "it
 decided that, so why has nothing happened".
+
+**Inputs missing** turns on as soon as something the controller was told to read
+cannot be read, and names it: `wohnzimmer.co2`, `badezimmer.contact[0]`. Each
+class of input then falls back to a documented answer rather than disappearing. A
+contact that cannot be read counts as open, a missing outdoor reading falls back
+to ventilation, and a dead humidity or CO₂ sensor only takes its own rule out.
+v1 skipped all of these silently, which is how a flat battery turned into a room
+that was heated against an open window.
 
 Three things raise a repair: the unit left manual mode, a configured input has
 been unreadable for an hour, and a register will not take its value. An input that

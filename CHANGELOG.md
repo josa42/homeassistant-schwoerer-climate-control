@@ -13,6 +13,11 @@
 
 - Two rooms can no longer drive one thermostat. They would write the same
   setpoint from two decisions, and whichever ran last would win.
+- The indicator for unreadable inputs is called "Inputs missing" rather than
+  "Degraded", after what switches it on instead of after the consequence. The
+  same list is now published under one name, `failed_inputs`, both there and on
+  every decision sensor. The entity id follows the name, so the old entity stays
+  behind as an orphan to delete once.
 
 ### Fixed
 

@@ -248,8 +248,8 @@
       }
     },
     "binary_sensor": {
-      "degraded": {
-        "name": "Eingeschränkt"
+      "missing_inputs": {
+        "name": "Eingaben fehlen"
       }
     }
   },
