@@ -365,13 +365,24 @@ def test_the_frost_limit_is_overridable_per_room() -> None:
     assert decision.gate_passed("frost_protection") is True
 
 
-def test_frost_protection_does_not_heat_a_room_with_the_window_open() -> None:
-    # Heating harder against an open window is not protection, it is a bill.
+def test_a_room_with_an_open_window_does_not_trigger_frost_protection() -> None:
+    # Sleeping with the window open in January is normal here. Letting the room
+    # that does it force the heating mode would have the coldest room in the
+    # house release the heat pump for every other room, all winter.
     cold = a_room(temperature=read(11.0), contacts=(read(True),))
     decision, _ = run(given(rooms=(cold,)), mode=Mode.VENTILATION)
-    assert decision.mode is Mode.HEATING
+    assert decision.mode is Mode.VENTILATION
+    assert decision.gate_passed("frost_protection") is True
     assert decision.rooms[0].target_temperature == 12.0
-    assert decision.rooms[0].reason is RoomReason.WINDOW_OPEN
+
+
+def test_a_closed_room_still_triggers_it_while_another_stands_open() -> None:
+    cold_open = a_room("schlafzimmer", temperature=read(11.0), contacts=(read(True),))
+    cold_shut = a_room("wohnzimmer", temperature=read(11.0))
+    decision, _ = run(given(rooms=(cold_open, cold_shut)), mode=Mode.VENTILATION)
+    assert decision.mode is Mode.HEATING
+    assert "Wohnzimmer" in decision.message
+    assert "Schlafzimmer" not in decision.message
 
 
 def test_a_room_with_no_temperature_cannot_trigger_frost_protection() -> None:

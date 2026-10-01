@@ -61,6 +61,7 @@ from .const import (
     CONF_OUTDOOR_SENSOR,
     CONF_PV_SENSOR,
     CONF_TEMPERATURE_SENSOR,
+    CONTACT_DWELL,
     DECISION_HISTORY,
     DEGRADED_GRACE,
     DOMAIN,
@@ -720,9 +721,34 @@ class ClimateControlCoordinator(DataUpdateCoordinator[SystemDecision]):
                 async_track_state_change_event(self.hass, entities, self._on_change)
             )
 
+    def contact_entities(self) -> set[str]:
+        """Every opening contact, which are the inputs with a dwell time."""
+        return {
+            entity
+            for room in self.rooms.values()
+            for entity in room.config.get(CONF_CONTACTS) or []
+        }
+
     @callback
-    def _on_change(self, _event: Event[EventStateChangedData]) -> None:
+    def _on_change(self, event: Event[EventStateChangedData]) -> None:
         self.hass.async_create_task(self.async_request_refresh())
+
+        # A contact has to hold its state for a minute before it counts, and
+        # nothing else will report in the meantime. Without a return visit the
+        # evaluation that notices it is the quarter-hourly tick, so a window
+        # opened at ten past would keep its room heated until twenty past.
+        if event.data.get("entity_id") in self.contact_entities():
+            self._unsubscribe.append(
+                async_call_later(
+                    self.hass,
+                    CONTACT_DWELL.total_seconds() + 5,
+                    self._after_contact_dwell,
+                )
+            )
+
+    @callback
+    def _after_contact_dwell(self, _now: datetime) -> None:
+        self.hass.async_create_task(self.async_refresh())
 
     async def async_shutdown(self) -> None:
         for unsubscribe in self._unsubscribe:

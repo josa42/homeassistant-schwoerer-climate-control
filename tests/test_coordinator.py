@@ -6,10 +6,11 @@ from datetime import timedelta
 
 import pytest
 from homeassistant.core import HomeAssistant
+from pytest_homeassistant_custom_component.common import async_fire_time_changed
 
 from custom_components.schwoerer_climate_control.const import STUCK_AFTER, Mode
 
-from .conftest import FAN, HEAT, OPERATION_MODE, THERMOSTAT
+from .conftest import CONTACT, FAN, HEAT, OPERATION_MODE, THERMOSTAT
 
 
 async def test_the_first_evaluation_never_writes(
@@ -265,3 +266,34 @@ async def test_the_recovery_sensor_reports_a_damper_that_moves_no_air(
     assert float(state.state) == pytest.approx(93.3, abs=0.1)
     assert state.attributes["bypass_open"] is True
     assert state.attributes["bypass_effective"] is False, "open, and recovering anyway"
+
+
+async def test_a_window_is_acted_on_a_minute_after_it_opens(
+    hass: HomeAssistant, start, freezer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A contact has to hold for a minute before it counts, and nothing else
+    # reports in the meantime. Without a return visit the evaluation that
+    # notices would be the quarter-hourly tick.
+    monkeypatch.setattr(
+        "custom_components.schwoerer_climate_control.coordinator.MIN_WRITE_INTERVAL",
+        timedelta(0),
+    )
+    coordinator, calls = await start()
+    await coordinator.async_set_mode(Mode.HEATING)
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+    calls.clear()
+
+    hass.states.async_set(CONTACT, "on")
+    await hass.async_block_till_done()
+    assert calls == [], "a hand on a handle is not an open window yet"
+
+    # The clock itself has to move: the dwell is measured against the contact's
+    # last change, so firing the timers alone proves nothing.
+    freezer.tick(timedelta(seconds=70))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+
+    setpoints = [call for call in calls if call.service == "set_temperature"]
+    assert setpoints, "the window should have been acted on by now"
+    assert setpoints[-1].data["temperature"] == 12.0

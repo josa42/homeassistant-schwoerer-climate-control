@@ -216,11 +216,20 @@ def _track_pv(inputs: Inputs, hub: dict[str, Any], state: EngineState) -> dateti
 
 
 def _frost_rooms(inputs: Inputs, hub: dict[str, Any]) -> tuple[str, ...]:
-    """Rooms that have fallen below their frost limit, named for the record."""
+    """Rooms that have fallen below their frost limit, named for the record.
+
+    A room with an open window is not one of them. It is cold on purpose, and
+    letting it force the heating mode would have the coldest room in the house
+    release the heat pump for every other room, all winter, because somebody
+    sleeps with the window open. Heating against an open window is not frost
+    protection wherever it is decided.
+    """
     cold: list[str] = []
     for room in inputs.rooms:
         value = room.temperature.as_number()
         if value is None:
+            continue
+        if _window_open(room.contacts)[0]:
             continue
         limit = EffectiveConfig(hub, room.config).number(CONF_FROST_PROTECTION_BELOW)
         if value < limit:
