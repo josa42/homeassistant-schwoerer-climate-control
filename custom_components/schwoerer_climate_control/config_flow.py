@@ -44,16 +44,19 @@ from .const import (
     CONF_EXTRACT_TEMPERATURE_SENSOR,
     CONF_FAN_AIR_QUALITY,
     CONF_FAN_BOOST,
+    CONF_FAN_HEAT_CAP,
     CONF_FAN_HOLIDAY,
     CONF_FAN_NIGHT,
     CONF_FAN_NIGHT_COOLING,
     CONF_FAN_NORMAL,
+    CONF_FAN_OFF_ABOVE,
     CONF_FAN_QUIET_MAX,
     CONF_FAN_SELECT,
     CONF_FORECAST_BLOCKS_ABOVE,
     CONF_FORECAST_ENTITY,
     CONF_FROST_PROTECTION_BELOW,
     CONF_FUNCTION_SELECT,
+    CONF_HEAT_CAP_ABOVE,
     CONF_HEAT_RELEASE_BELOW,
     CONF_HEAT_RELEASE_SWITCH,
     CONF_HUMIDITY_HIGH,
@@ -64,11 +67,12 @@ from .const import (
     CONF_NOTIFY_SERVICE,
     CONF_OPERATION_MODE_SELECT,
     CONF_OUTDOOR_SENSOR,
-    CONF_PV_SENSOR,
-    CONF_PV_SURPLUS_ABOVE,
-    CONF_PV_TARGET_BOOST,
     CONF_RELEASE_HYSTERESIS,
     CONF_SUPPLY_TEMPERATURE_SENSOR,
+    CONF_SURPLUS_ENTITY,
+    CONF_SURPLUS_START,
+    CONF_SURPLUS_STOP,
+    CONF_SURPLUS_TARGET_BOOST,
     CONF_TARGET_COOL,
     CONF_TARGET_COOL_HOLIDAY,
     CONF_TARGET_COOL_WINDOW_OPEN,
@@ -139,7 +143,12 @@ def unit_schema(values: Mapping[str, Any]) -> vol.Schema:
         _optional(schema, key, values, _entity("sensor", device_class="temperature"))
     _optional(schema, CONF_BYPASS_SENSOR, values, _entity("sensor"))
     _optional(schema, CONF_FORECAST_ENTITY, values, _entity("weather"))
-    _optional(schema, CONF_PV_SENSOR, values, _entity("sensor", device_class="power"))
+    _optional(
+        schema,
+        CONF_SURPLUS_ENTITY,
+        values,
+        _entity(["binary_sensor", "input_boolean", "sensor"]),
+    )
     _optional(schema, CONF_NOTIFY_SERVICE, values, selector.TextSelector())
     schema[vol.Required(CONF_DRY_RUN, default=values.get(CONF_DRY_RUN, True))] = (
         selector.BooleanSelector()
@@ -217,12 +226,16 @@ def thresholds_schema(values: Mapping[str, Any]) -> vol.Schema:
                 min=400, max=3000, step=50, unit_of_measurement="ppm"
             )
         ),
-        CONF_PV_SURPLUS_ABOVE: selector.NumberSelector(
-            selector.NumberSelectorConfig(
-                min=0, max=15000, step=50, unit_of_measurement="W"
-            )
+        CONF_SURPLUS_START: selector.NumberSelector(
+            selector.NumberSelectorConfig(min=0, max=15000, step=50)
         ),
-        CONF_PV_TARGET_BOOST: _temperature(0, 5),
+        CONF_SURPLUS_STOP: selector.NumberSelector(
+            selector.NumberSelectorConfig(min=0, max=15000, step=50)
+        ),
+        CONF_SURPLUS_TARGET_BOOST: _temperature(0, 5),
+        CONF_HEAT_CAP_ABOVE: _temperature(0, 20),
+        CONF_FAN_HEAT_CAP: _stage(),
+        CONF_FAN_OFF_ABOVE: _temperature(0, 30),
     }
     for key, field in fields.items():
         schema[vol.Required(key, default=merged[key])] = field
@@ -308,7 +321,7 @@ UNIT_KEYS: tuple[str, ...] = (
     CONF_EXTRACT_TEMPERATURE_SENSOR,
     CONF_BYPASS_SENSOR,
     CONF_FORECAST_ENTITY,
-    CONF_PV_SENSOR,
+    CONF_SURPLUS_ENTITY,
     CONF_NOTIFY_SERVICE,
     CONF_DRY_RUN,
 )
@@ -341,7 +354,7 @@ def _replace(
 class ClimateControlConfigFlow(ConfigFlow, domain=DOMAIN):
     """Set the unit up once."""
 
-    VERSION = 1
+    VERSION = 2
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None

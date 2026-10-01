@@ -13,25 +13,25 @@
           "compressor_sensor": "Status Wärmepumpe",
           "operation_mode_select": "Betriebsart",
           "forecast_entity": "Wettervorhersage",
-          "pv_sensor": "PV-Leistung",
           "notify_service": "Benachrichtigungsdienst",
           "dry_run": "Testbetrieb",
           "supply_temperature_sensor": "Zulufttemperatur (T3)",
           "extract_temperature_sensor": "Ablufttemperatur (T5)",
           "bypass_sensor": "Bypass-Zustand",
-          "add_rooms": "Räume der Anlage übernehmen"
+          "add_rooms": "Räume der Anlage übernehmen",
+          "surplus_entity": "Energie übrig"
         },
         "data_description": {
           "operation_mode_select": "Wird nur gelesen, nie geschrieben. Die Entscheidungen setzen Handbetrieb voraus, sonst erscheint eine Reparatur.",
           "compressor_sensor": "Entscheidet, ob eine Freigabe geändert werden darf: solange der Kompressor steht, darf sie jederzeit wechseln.",
           "forecast_entity": "Optional. Lässt einen kalten Morgen mit warmer Prognose ohne Wärmepumpe auskommen.",
-          "pv_sensor": "Optional. Hebt Solltemperaturen an, solange Überschuss anliegt.",
           "notify_service": "Optional, zum Beispiel notify.mobile_app_handy. Nachrichten werden fünf Minuten gesammelt.",
           "dry_run": "Alles wird entschieden und veröffentlicht, nichts geschrieben. Bei einer neuen Installation an.",
           "supply_temperature_sensor": "Optional. Zusammen mit Abluft und Außentemperatur sagt das, ob der Bypass überhaupt Luft bewegt.",
           "extract_temperature_sensor": "Optional. Die Luft, die das Haus verlässt, also das, was zurückzugewinnen ist.",
           "bypass_sensor": "Optional, und wird nur gelesen. Für die Klappe gibt es auf keiner bekannten Firmware ein Schreibregister.",
-          "add_rooms": "Legt pro Thermostat der Anlage einen Raum an, mit dem Namen den er schon hat. Kontakte, Feuchte und CO₂ gehören zu anderen Integrationen und kommen danach pro Raum dazu."
+          "add_rooms": "Legt pro Thermostat der Anlage einen Raum an, mit dem Namen den er schon hat. Kontakte, Feuchte und CO₂ gehören zu anderen Integrationen und kommen danach pro Raum dazu.",
+          "surplus_entity": "Optional. Eine An/Aus-Entity wird beim Wort genommen, eine Zahl gegen die beiden Schwellen gelesen. Kühlen mit dem Kompressor läuft nur solange das ja sagt, und Sollwerte werden nur dann angehoben. Mit Batterie und Tarif ist „übrig“ eine Richtlinie, deshalb ist ein eigener Template-Sensor die ehrliche Antwort."
         }
       }
     },
@@ -59,23 +59,23 @@
           "compressor_sensor": "Status Wärmepumpe",
           "operation_mode_select": "Betriebsart",
           "forecast_entity": "Wettervorhersage",
-          "pv_sensor": "PV-Leistung",
           "notify_service": "Benachrichtigungsdienst",
           "dry_run": "Testbetrieb",
           "supply_temperature_sensor": "Zulufttemperatur (T3)",
           "extract_temperature_sensor": "Ablufttemperatur (T5)",
-          "bypass_sensor": "Bypass-Zustand"
+          "bypass_sensor": "Bypass-Zustand",
+          "surplus_entity": "Energie übrig"
         },
         "data_description": {
           "operation_mode_select": "Wird nur gelesen, nie geschrieben. Die Entscheidungen setzen Handbetrieb voraus, sonst erscheint eine Reparatur.",
           "compressor_sensor": "Entscheidet, ob eine Freigabe geändert werden darf: solange der Kompressor steht, darf sie jederzeit wechseln.",
           "forecast_entity": "Optional. Lässt einen kalten Morgen mit warmer Prognose ohne Wärmepumpe auskommen.",
-          "pv_sensor": "Optional. Hebt Solltemperaturen an, solange Überschuss anliegt.",
           "notify_service": "Optional, zum Beispiel notify.mobile_app_handy. Nachrichten werden fünf Minuten gesammelt.",
           "dry_run": "Alles wird entschieden und veröffentlicht, nichts geschrieben. Bei einer neuen Installation an.",
           "supply_temperature_sensor": "Optional. Zusammen mit Abluft und Außentemperatur sagt das, ob der Bypass überhaupt Luft bewegt.",
           "extract_temperature_sensor": "Optional. Die Luft, die das Haus verlässt, also das, was zurückzugewinnen ist.",
-          "bypass_sensor": "Optional, und wird nur gelesen. Für die Klappe gibt es auf keiner bekannten Firmware ein Schreibregister."
+          "bypass_sensor": "Optional, und wird nur gelesen. Für die Klappe gibt es auf keiner bekannten Firmware ein Schreibregister.",
+          "surplus_entity": "Optional. Eine An/Aus-Entity wird beim Wort genommen, eine Zahl gegen die beiden Schwellen gelesen. Kühlen mit dem Kompressor läuft nur solange das ja sagt, und Sollwerte werden nur dann angehoben. Mit Batterie und Tarif ist „übrig“ eine Richtlinie, deshalb ist ein eigener Template-Sensor die ehrliche Antwort."
         }
       },
       "thresholds": {
@@ -105,8 +105,12 @@
           "fan_night_cooling": "Luftstufe für Nachtauskühlung",
           "humidity_high": "Feuchte ist hoch über",
           "co2_high": "CO₂ ist hoch über",
-          "pv_surplus_above": "PV-Überschuss über",
-          "pv_target_boost": "Sollwert anheben um"
+          "surplus_start": "Energie übrig ab",
+          "surplus_stop": "und wieder vorbei unter",
+          "surplus_target_boost": "Sollwert anheben um",
+          "heat_cap_above": "Lüfter deckeln, wenn es draußen wärmer ist um",
+          "fan_heat_cap": "Luftstufe solange es draußen wärmer ist",
+          "fan_off_above": "Lüfter aus, wenn es draußen wärmer ist um"
         }
       }
     }

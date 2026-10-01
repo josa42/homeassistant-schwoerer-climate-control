@@ -13,25 +13,25 @@
           "compressor_sensor": "Heat pump status",
           "operation_mode_select": "Operating mode",
           "forecast_entity": "Weather forecast",
-          "pv_sensor": "PV power",
           "notify_service": "Notification service",
           "dry_run": "Dry run",
           "supply_temperature_sensor": "Supply air temperature (T3)",
           "extract_temperature_sensor": "Extract air temperature (T5)",
           "bypass_sensor": "Bypass state",
-          "add_rooms": "Take on the unit's rooms"
+          "add_rooms": "Take on the unit's rooms",
+          "surplus_entity": "Energy to spare"
         },
         "data_description": {
           "operation_mode_select": "Only read, never written. The decisions assume the unit is in manual mode, and a repair is raised when it is not.",
           "compressor_sensor": "Used to decide whether a release may be changed: while the compressor is standing still it may change freely.",
           "forecast_entity": "Optional. Lets a cold morning under a warm forecast skip the heat pump.",
-          "pv_sensor": "Optional. Raises setpoints while a surplus is available.",
           "notify_service": "Optional, for example notify.mobile_app_phone. Messages are gathered for five minutes.",
           "dry_run": "Everything is decided and published, nothing is written. On for a fresh install.",
           "supply_temperature_sensor": "Optional. With the extract air and the outdoor reading, this is what says whether the bypass is moving any air at all.",
           "extract_temperature_sensor": "Optional. The air leaving the house, which is what there is to recover from.",
           "bypass_sensor": "Optional, and read only. There is no write register for the damper on any known firmware.",
-          "add_rooms": "Creates one room per thermostat of the unit, with the name it already has. Contacts, humidity and CO₂ belong to other integrations and are added per room afterwards."
+          "add_rooms": "Creates one room per thermostat of the unit, with the name it already has. Contacts, humidity and CO₂ belong to other integrations and are added per room afterwards.",
+          "surplus_entity": "Optional. An on/off entity is taken at its word; a number is read against the two thresholds. Cooling with the compressor only runs while this says yes, and setpoints are only raised then. With a battery and a tariff, what counts as spare is a policy, so a template sensor of your own is the honest answer."
         }
       }
     },
@@ -59,23 +59,23 @@
           "compressor_sensor": "Heat pump status",
           "operation_mode_select": "Operating mode",
           "forecast_entity": "Weather forecast",
-          "pv_sensor": "PV power",
           "notify_service": "Notification service",
           "dry_run": "Dry run",
           "supply_temperature_sensor": "Supply air temperature (T3)",
           "extract_temperature_sensor": "Extract air temperature (T5)",
-          "bypass_sensor": "Bypass state"
+          "bypass_sensor": "Bypass state",
+          "surplus_entity": "Energy to spare"
         },
         "data_description": {
           "operation_mode_select": "Only read, never written. The decisions assume the unit is in manual mode, and a repair is raised when it is not.",
           "compressor_sensor": "Used to decide whether a release may be changed: while the compressor is standing still it may change freely.",
           "forecast_entity": "Optional. Lets a cold morning under a warm forecast skip the heat pump.",
-          "pv_sensor": "Optional. Raises setpoints while a surplus is available.",
           "notify_service": "Optional, for example notify.mobile_app_phone. Messages are gathered for five minutes.",
           "dry_run": "Everything is decided and published, nothing is written. On for a fresh install.",
           "supply_temperature_sensor": "Optional. With the extract air and the outdoor reading, this is what says whether the bypass is moving any air at all.",
           "extract_temperature_sensor": "Optional. The air leaving the house, which is what there is to recover from.",
-          "bypass_sensor": "Optional, and read only. There is no write register for the damper on any known firmware."
+          "bypass_sensor": "Optional, and read only. There is no write register for the damper on any known firmware.",
+          "surplus_entity": "Optional. An on/off entity is taken at its word; a number is read against the two thresholds. Cooling with the compressor only runs while this says yes, and setpoints are only raised then. With a battery and a tariff, what counts as spare is a policy, so a template sensor of your own is the honest answer."
         }
       },
       "thresholds": {
@@ -105,8 +105,12 @@
           "fan_night_cooling": "Fan level for night cooling",
           "humidity_high": "Humidity is high above",
           "co2_high": "CO₂ is high above",
-          "pv_surplus_above": "PV surplus above",
-          "pv_target_boost": "Raise the target by"
+          "surplus_start": "Spare energy starts above",
+          "surplus_stop": "and stops below",
+          "surplus_target_boost": "Raise the target by",
+          "heat_cap_above": "Cap the fan when it is warmer outside by",
+          "fan_heat_cap": "Fan level while it is warmer outside",
+          "fan_off_above": "Stop the fan when it is warmer outside by"
         }
       }
     }

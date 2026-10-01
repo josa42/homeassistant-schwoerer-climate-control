@@ -52,6 +52,7 @@ from .const import (
     CONF_CONTACTS,
     CONF_COOL_RELEASE_SWITCH,
     CONF_DRY_RUN,
+    CONF_EXTRACT_TEMPERATURE_SENSOR,
     CONF_FORECAST_ENTITY,
     CONF_HEAT_RELEASE_SWITCH,
     CONF_HUMIDITY_SENSOR,
@@ -59,7 +60,7 @@ from .const import (
     CONF_NOTIFY_SERVICE,
     CONF_OPERATION_MODE_SELECT,
     CONF_OUTDOOR_SENSOR,
-    CONF_PV_SENSOR,
+    CONF_SURPLUS_ENTITY,
     CONF_TEMPERATURE_SENSOR,
     CONTACT_DWELL,
     DECISION_HISTORY,
@@ -365,8 +366,11 @@ class ClimateControlCoordinator(DataUpdateCoordinator[SystemDecision]):
         return Inputs(
             now=dt_util.now(),
             outdoor=self._number(config.get(CONF_OUTDOOR_SENSOR)) or Reading(),
+            extract=self._number(config.get(CONF_EXTRACT_TEMPERATURE_SENSOR)),
             forecast_max=await self._forecast_max(),
-            pv_power=self._number(config.get(CONF_PV_SENSOR)),
+            # Raw, because it may be an on/off entity or a number and the engine
+            # decides which it is.
+            surplus=self._state_reading(config.get(CONF_SURPLUS_ENTITY)),
             heat_release=self._binary(config.get(CONF_HEAT_RELEASE_SWITCH)) or Reading(),
             cool_release=self._binary(config.get(CONF_COOL_RELEASE_SWITCH)) or Reading(),
             compressor_running=self._compressor(),
@@ -716,7 +720,7 @@ class ClimateControlCoordinator(DataUpdateCoordinator[SystemDecision]):
             config.get(key)
             for key in (
                 CONF_OUTDOOR_SENSOR,
-                CONF_PV_SENSOR,
+                CONF_SURPLUS_ENTITY,
                 CONF_HEAT_RELEASE_SWITCH,
                 CONF_COOL_RELEASE_SWITCH,
                 CONF_COMPRESSOR_SENSOR,

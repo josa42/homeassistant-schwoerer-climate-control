@@ -498,13 +498,6 @@ def test_cooling_uses_the_cooling_setpoint_and_keeps_the_damper_gate_open() -> N
     assert decision.heat_release is False
 
 
-def test_cooling_is_released_when_a_room_is_too_warm() -> None:
-    inputs = given(outdoor=read(30.0), rooms=(a_room(temperature=read(27.0)),))
-    decision, _ = run(inputs, mode=Mode.COOLING)
-    assert decision.cool_release is True
-    assert decision.reason is Reason.COOL_RELEASED
-
-
 def test_cooling_is_not_released_for_a_house_that_is_warm_enough() -> None:
     inputs = given(outdoor=read(30.0), rooms=(a_room(temperature=read(24.0)),))
     decision, _ = run(inputs, mode=Mode.COOLING)
@@ -563,46 +556,138 @@ def test_a_disabled_controller_still_carries_the_dwell_timers() -> None:
 
 
 ################################################################################
-# PV surplus
+# Energy to spare
 
 
-def test_pv_surplus_raises_the_setpoint_only_once_it_has_held() -> None:
-    inputs = given(pv_power=read(3000.0))
+def test_a_boolean_surplus_is_taken_at_its_word() -> None:
+    # The house decided already. A dwell time here would only delay a decision
+    # somebody has made on purpose.
+    inputs = given(surplus=read("on"))
+    decision, _ = run(inputs)
+    assert decision.rooms[0].target_temperature == 21.0
+    assert decision.rooms[0].reason is RoomReason.SURPLUS
+
+
+def test_a_numeric_surplus_has_to_hold_first() -> None:
+    inputs = given(surplus=read(1200.0))
     first, state = run(inputs)
     assert first.rooms[0].target_temperature == 20.0
 
     later = replace(inputs, now=NOON + timedelta(minutes=25))
     decision, _ = run(later, state=state)
     assert decision.rooms[0].target_temperature == 21.0
-    assert decision.rooms[0].reason is RoomReason.PV_SURPLUS
 
 
-def test_a_boosted_setpoint_is_a_number_the_device_can_store() -> None:
-    # 10.1 + 0.2 is 10.299999999999999 in binary floating point, while the
-    # device reports an exact 10.3 because it reports a register divided by ten.
-    # Unrounded, the two differ for as long as the surplus holds, and a writer
-    # that diffs would write that register on every evaluation.
-    inputs = given(
-        pv_power=read(3000.0), rooms=(a_room(config={CONF_TARGET_NORMAL: 10.1}),)
-    )
-    _, state = run(inputs, {"pv_target_boost": 0.2})
-    later = replace(inputs, now=NOON + timedelta(minutes=25))
-    target = run(later, {"pv_target_boost": 0.2}, state=state)[0].rooms[0].target_temperature
-    assert target == 10.3
-    assert repr(target) == "10.3"
-
-
-def test_pv_surplus_is_not_stored_in_a_room_with_an_open_window() -> None:
-    inputs = given(pv_power=read(3000.0), rooms=(a_room(contacts=(read(True),)),))
+def test_spending_the_surplus_does_not_withdraw_the_reason_for_it() -> None:
+    # Start above 800, and keep going until it falls below 100. Without the
+    # second threshold, switching the compressor on would cut the export that
+    # justified it and switch it straight back off.
+    inputs = given(surplus=read(900.0))
     _, state = run(inputs)
-    later = replace(inputs, now=NOON + timedelta(minutes=25))
-    assert run(later, state=state)[0].rooms[0].target_temperature == 12.0
+    assert state.surplus_since is not None
+
+    dropped = replace(inputs, surplus=read(300.0), now=NOON + timedelta(minutes=25))
+    decision, state = run(dropped, state=state)
+    assert state.surplus_since is not None, "still counts, it is above the stop"
+    assert decision.rooms[0].target_temperature == 21.0
+
+    gone = replace(inputs, surplus=read(50.0), now=NOON + timedelta(minutes=30))
+    _, state = run(gone, state=state)
+    assert state.surplus_since is None
 
 
-def test_pv_surplus_dropping_out_restarts_the_clock() -> None:
-    _, state = run(given(pv_power=read(3000.0)))
-    _, state = run(given(pv_power=read(100.0)), state=state)
-    assert state.pv_surplus_since is None
+def test_surplus_is_not_stored_in_a_room_with_an_open_window() -> None:
+    inputs = given(surplus=read("on"), rooms=(a_room(contacts=(read(True),)),))
+    assert run(inputs)[0].rooms[0].target_temperature == 12.0
+
+
+def test_no_surplus_entity_means_no_boost() -> None:
+    assert run()[0].rooms[0].target_temperature == 20.0
+
+
+################################################################################
+# Cooling costs electricity
+
+
+def warm_house(**overrides: Any) -> Inputs:
+    return given(outdoor=read(30.0), rooms=(a_room(temperature=read(27.5)),), **overrides)
+
+
+def test_cooling_waits_for_energy_to_spare() -> None:
+    decision, _ = run(warm_house(), mode=Mode.COOLING)
+    assert decision.cool_release is False
+    assert decision.reason is Reason.COOL_NO_SURPLUS
+    assert decision.gate_passed("room_too_warm") is True
+    assert decision.gate_passed("surplus") is False
+    assert "no surplus" in decision.message
+
+
+def test_cooling_runs_once_there_is_surplus() -> None:
+    decision, _ = run(warm_house(surplus=read("on")), mode=Mode.COOLING)
+    assert decision.cool_release is True
+    assert decision.reason is Reason.COOL_RELEASED
+
+
+def test_surplus_alone_does_not_cool_a_cool_house() -> None:
+    decision, _ = run(given(surplus=read("on")), mode=Mode.COOLING)
+    assert decision.cool_release is False
+    assert decision.reason is Reason.COOL_NOT_NEEDED
+
+
+################################################################################
+# Not ventilating against the heat
+
+
+def test_the_fan_is_capped_when_it_is_warmer_outside() -> None:
+    # 27 outside against 23 extract: four kelvin, so the supply air arrives a
+    # few tenths above the room. Capped, not stopped.
+    inputs = given(outdoor=read(27.0), extract=read(23.0))
+    decision, _ = run(inputs, mode=Mode.VENTILATION)
+    assert decision.fan_level == 1
+    assert decision.fan_reason is FanReason.HEAT_PROTECTION
+    assert decision.fan_capped_from == 2
+
+
+def test_the_fan_stops_in_a_heat_wave() -> None:
+    inputs = given(outdoor=read(39.0), extract=read(23.0))
+    decision, _ = run(inputs, mode=Mode.VENTILATION)
+    assert decision.fan_level == 0
+
+
+def test_humidity_does_not_ventilate_against_the_heat() -> None:
+    # Outside air at 39 degrees carries far more water than the room does, so
+    # ventilating against indoor humidity makes it worse.
+    bath = a_room("bad", humidity=read(76.0))
+    inputs = given(outdoor=read(39.0), extract=read(23.0), rooms=(bath,))
+    decision, _ = run(inputs, mode=Mode.COOLING)
+    assert decision.fan_level == 0
+    assert decision.fan_reason is FanReason.HEAT_PROTECTION
+    assert decision.fan_capped_from == 3
+
+
+def test_the_cap_does_not_apply_while_heating() -> None:
+    # In heating mode the warmth coming in is the point.
+    inputs = given(outdoor=read(27.0), extract=read(23.0))
+    assert run(inputs, mode=Mode.HEATING)[0].fan_level == 2
+
+
+def test_a_fixed_stage_still_wins_over_the_cap() -> None:
+    inputs = given(outdoor=read(39.0), extract=read(23.0))
+    decision, _ = run(inputs, mode=Mode.COOLING, fan_request=3)
+    assert decision.fan_level == 3
+    assert decision.fan_reason is FanReason.FIXED_STAGE
+
+
+def test_the_cap_falls_back_to_the_rooms_when_there_is_no_extract_reading() -> None:
+    inputs = given(outdoor=read(39.0), rooms=(a_room(temperature=read(23.0)),))
+    assert run(inputs, mode=Mode.VENTILATION)[0].fan_level == 0
+
+
+def test_a_cooler_outside_is_not_capped() -> None:
+    inputs = given(outdoor=read(16.0), extract=read(23.0))
+    decision, _ = run(inputs, mode=Mode.VENTILATION)
+    assert decision.fan_level == 2
+    assert decision.fan_capped_from is None
 
 
 ################################################################################
@@ -611,7 +696,7 @@ def test_pv_surplus_dropping_out_restarts_the_clock() -> None:
 
 @pytest.mark.parametrize("mode", list(Mode))
 def test_every_decision_carries_its_inputs_and_settings(mode: Mode) -> None:
-    decision, _ = run(given(forecast_max=read(12.0), pv_power=read(500.0)), mode=mode)
+    decision, _ = run(given(forecast_max=read(12.0), surplus=read(500.0)), mode=mode)
     assert decision.inputs["outdoor"]["value"] == 5.0
     assert decision.inputs["outdoor"]["age"] == BRIEF.total_seconds()
     assert decision.settings["heat_release_below"]["source"] == "default"

@@ -12,7 +12,12 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.typing import ConfigType
 
-from .const import DOMAIN
+from .const import (
+    CONF_SURPLUS_ENTITY,
+    CONF_SURPLUS_START,
+    CONF_SURPLUS_TARGET_BOOST,
+    DOMAIN,
+)
 from .coordinator import ClimateControlConfigEntry, ClimateControlCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -71,6 +76,38 @@ async def async_setup_entry(
     await coordinator.async_start_watching()
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(_async_reload))
+    return True
+
+
+async def async_migrate_entry(
+    hass: HomeAssistant, entry: ClimateControlConfigEntry
+) -> bool:
+    """Carry an older entry forward.
+
+    Version 2 replaced the PV fields with one surplus input used for both cooling
+    and raising setpoints. Silently dropping the old configuration would turn the
+    setpoint boost off without saying so, which is exactly the kind of quiet
+    breakage this integration exists to avoid.
+    """
+    if entry.version >= 2:
+        return True
+
+    renamed = {
+        "pv_sensor": CONF_SURPLUS_ENTITY,
+        "pv_surplus_above": CONF_SURPLUS_START,
+        "pv_target_boost": CONF_SURPLUS_TARGET_BOOST,
+    }
+    data = dict(entry.data)
+    options = dict(entry.options)
+    for was, now in renamed.items():
+        for store in (data, options):
+            if was in store:
+                store.setdefault(now, store.pop(was))
+
+    hass.config_entries.async_update_entry(
+        entry, data=data, options=options, version=2
+    )
+    _LOGGER.info("Migrated the PV fields to one surplus input")
     return True
 
 

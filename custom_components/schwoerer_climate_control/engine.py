@@ -27,20 +27,24 @@ from .const import (
     CONF_COOL_RELEASE_ABOVE,
     CONF_FAN_AIR_QUALITY,
     CONF_FAN_BOOST,
+    CONF_FAN_HEAT_CAP,
     CONF_FAN_HOLIDAY,
     CONF_FAN_NIGHT,
     CONF_FAN_NIGHT_COOLING,
     CONF_FAN_NORMAL,
+    CONF_FAN_OFF_ABOVE,
     CONF_FAN_QUIET_MAX,
     CONF_FORECAST_BLOCKS_ABOVE,
     CONF_FROST_PROTECTION_BELOW,
+    CONF_HEAT_CAP_ABOVE,
     CONF_HEAT_RELEASE_BELOW,
     CONF_HUMIDITY_HIGH,
     CONF_NIGHT_END,
     CONF_NIGHT_START,
-    CONF_PV_SURPLUS_ABOVE,
-    CONF_PV_TARGET_BOOST,
     CONF_RELEASE_HYSTERESIS,
+    CONF_SURPLUS_START,
+    CONF_SURPLUS_STOP,
+    CONF_SURPLUS_TARGET_BOOST,
     CONF_TARGET_COOL,
     CONF_TARGET_COOL_HOLIDAY,
     CONF_TARGET_COOL_WINDOW_OPEN,
@@ -52,8 +56,8 @@ from .const import (
     FAN_MAX,
     FAN_MIN,
     OUTDOOR_MAX_AGE,
-    PV_SURPLUS_DWELL,
     RELEASE_LOCKOUT,
+    SURPLUS_DWELL,
     TARGET_MAX,
     TARGET_MIN,
     TARGET_RESOLUTION,
@@ -96,8 +100,13 @@ class Inputs:
 
     now: datetime
     outdoor: Reading = Reading()
+    #: The air leaving the house, which decides what temperature the supply air
+    #: arrives at and is therefore what "too warm outside" is measured against.
+    extract: Reading | None = None
     forecast_max: Reading | None = None
-    pv_power: Reading | None = None
+    #: Whether there is energy to spare, as the house itself defines it. An
+    #: on/off entity is taken at its word; a number is read against thresholds.
+    surplus: Reading | None = None
     #: The releases as the device reports them, with how long they have held.
     heat_release: Reading = Reading()
     cool_release: Reading = Reading()
@@ -116,7 +125,7 @@ class EngineState:
     """
 
     co2_high_since: Mapping[str, datetime] = field(default_factory=dict)
-    pv_surplus_since: datetime | None = None
+    surplus_since: datetime | None = None
 
 
 def _parse_time(value: str) -> time:
@@ -203,16 +212,42 @@ def _track_co2(
     return tracked
 
 
-def _track_pv(inputs: Inputs, hub: dict[str, Any], state: EngineState) -> datetime | None:
-    """Carry forward since when PV surplus has held."""
-    if inputs.pv_power is None:
-        return None
-    power = inputs.pv_power.as_number()
-    if power is None:
-        return state.pv_surplus_since
-    if power < EffectiveConfig(hub).number(CONF_PV_SURPLUS_ABOVE):
-        return None
-    return state.pv_surplus_since or inputs.now
+def _surplus(
+    inputs: Inputs, hub: dict[str, Any], state: EngineState
+) -> tuple[datetime | None, bool, str]:
+    """Since when there has been surplus, whether it counts yet, and why.
+
+    An on/off entity is the house's own judgement and takes effect at once: the
+    dwell time would only delay a decision somebody has already made. A number
+    gets the dwell, and a stop threshold below the start one, so that spending
+    the surplus does not immediately withdraw the reason for spending it.
+    """
+    reading = inputs.surplus
+    if reading is None or reading.missing:
+        return None, False, "none configured"
+
+    config = EffectiveConfig(hub)
+    value = reading.value
+    if isinstance(value, bool) or str(value) in ("on", "off"):
+        available = value is True or str(value) == "on"
+        return (
+            inputs.now if available else None,
+            available,
+            "yes" if available else "no",
+        )
+
+    number = reading.as_number()
+    if number is None:
+        return None, False, "unreadable"
+
+    running = state.surplus_since is not None
+    limit = config.number(CONF_SURPLUS_STOP if running else CONF_SURPLUS_START)
+    if number < limit:
+        return None, False, f"{number} below {limit}"
+
+    since = state.surplus_since or inputs.now
+    held = inputs.now - since
+    return since, held >= SURPLUS_DWELL, f"{number} at or above {limit}"
 
 
 def _frost_rooms(inputs: Inputs, hub: dict[str, Any]) -> tuple[str, ...]:
@@ -367,27 +402,37 @@ def _warmest_room(inputs: Inputs) -> tuple[float | None, str | None]:
 
 
 def _cool_wanted(
-    config: EffectiveConfig, inputs: Inputs
+    config: EffectiveConfig, inputs: Inputs, *, surplus: bool, surplus_detail: str
 ) -> tuple[bool, Reason, list[Gate], str | None]:
-    """Whether the heat pump should be released for cooling, and why."""
+    """Whether the heat pump should be released for cooling, and why.
+
+    Cooling with the compressor is the one expensive thing this controller can
+    turn on, so it waits for energy the house has no better use for. Note that
+    the release lockout still applies on the way back out: losing the surplus
+    does not stop a compressor that started less than half an hour ago, because
+    short-cycling it is the worse outcome.
+    """
     warmest, whose = _warmest_room(inputs)
     threshold = config.number(CONF_COOL_RELEASE_ABOVE)
     hysteresis = config.number(CONF_RELEASE_HYSTERESIS)
     released = not inputs.cool_release.missing and bool(inputs.cool_release.value)
 
     limit = threshold - hysteresis if released else threshold
-    wanted = warmest is not None and warmest > limit
-    gate = Gate(
-        "room_too_warm",
-        wanted,
-        f"{whose} at {warmest} > {limit}" if warmest is not None else "no reading",
-    )
-    return (
-        wanted,
-        Reason.COOL_RELEASED if wanted else Reason.COOL_NOT_NEEDED,
-        [gate],
-        whose if wanted else None,
-    )
+    warm_enough = warmest is not None and warmest > limit
+    gates = [
+        Gate(
+            "room_too_warm",
+            warm_enough,
+            f"{whose} at {warmest} > {limit}" if warmest is not None else "no reading",
+        ),
+        Gate("surplus", surplus, surplus_detail),
+    ]
+
+    if not warm_enough:
+        return False, Reason.COOL_NOT_NEEDED, gates, None
+    if not surplus:
+        return False, Reason.COOL_NO_SURPLUS, gates, None
+    return True, Reason.COOL_RELEASED, gates, whose
 
 
 #: Settings that belong to the unit rather than to a room, recorded with the
@@ -404,8 +449,12 @@ SYSTEM_SETTINGS: tuple[str, ...] = (
     CONF_FAN_BOOST,
     CONF_FAN_AIR_QUALITY,
     CONF_FAN_NIGHT_COOLING,
-    CONF_PV_SURPLUS_ABOVE,
-    CONF_PV_TARGET_BOOST,
+    CONF_FAN_HEAT_CAP,
+    CONF_FAN_OFF_ABOVE,
+    CONF_HEAT_CAP_ABOVE,
+    CONF_SURPLUS_START,
+    CONF_SURPLUS_STOP,
+    CONF_SURPLUS_TARGET_BOOST,
     CONF_NIGHT_START,
     CONF_NIGHT_END,
 )
@@ -421,7 +470,7 @@ def _room_decision(
     holiday: bool,
     heating_active: bool,
     outdoor: float | None,
-    pv_surplus: bool,
+    surplus: bool,
 ) -> RoomDecision:
     """Decide one room's setpoint and whether its auxiliary heater may run."""
     config = EffectiveConfig(hub, room.config)
@@ -491,9 +540,9 @@ def _room_decision(
         # Surplus is only worth storing in a house that is occupied and shut.
         # Dumping it into an empty room or one with the window open is paying
         # attention to the inverter instead of to the house.
-        if mode is Mode.HEATING and pv_surplus and not window_open and not holiday:
-            target += config.number(CONF_PV_TARGET_BOOST)
-            reason = RoomReason.PV_SURPLUS
+        if mode is Mode.HEATING and surplus and not window_open and not holiday:
+            target += config.number(CONF_SURPLUS_TARGET_BOOST)
+            reason = RoomReason.SURPLUS
 
         if mode is Mode.VENTILATION:
             # The setpoint is still written, so the device shows a sensible
@@ -583,9 +632,9 @@ def _room_message(
         head = f"Night setback, target {target} °C"
     elif reason is RoomReason.COOLING:
         head = f"Cooling to {target} °C"
-    elif reason is RoomReason.PV_SURPLUS:
-        boost = config.number(CONF_PV_TARGET_BOOST)
-        head = f"PV surplus, target raised by {boost} K to {target} °C"
+    elif reason is RoomReason.SURPLUS:
+        boost = config.number(CONF_SURPLUS_TARGET_BOOST)
+        head = f"Surplus, target raised by {boost} K to {target} °C"
     else:
         head = f"Target {target} °C"
 
@@ -598,6 +647,45 @@ def _room_message(
     if heating_enabled is False:
         head += ", heater off"
     return head
+
+
+def _heat_excess(inputs: Inputs, hub: dict[str, Any]) -> float | None:
+    """How much warmer it is outside than the air leaving the house.
+
+    The extract air is the reference because it is what the exchanger recovers
+    from, and so what decides the temperature the supply air arrives at: roughly
+    extract plus (1 - efficiency) times the excess. Without it the mean room
+    temperature stands in, which is most of what the extract air is.
+    """
+    outdoor = inputs.outdoor.as_number()
+    reference = None if inputs.extract is None else inputs.extract.as_number()
+    if reference is None:
+        readings = [
+            value
+            for room in inputs.rooms
+            if (value := room.temperature.as_number()) is not None
+        ]
+        reference = sum(readings) / len(readings) if readings else None
+    if outdoor is None or reference is None:
+        return None
+    return outdoor - reference
+
+
+def _heat_ceiling(config: EffectiveConfig, excess: float | None) -> int | None:
+    """The highest fan level worth running while it is warmer outside.
+
+    Two steps, because a warm afternoon and a heat wave are not the same thing.
+    At a few kelvin the supply air arrives within a few tenths of the extract air
+    and there is nothing to protect against; far above it the cheapest thing to
+    do is stop.
+    """
+    if excess is None:
+        return None
+    if excess > config.number(CONF_FAN_OFF_ABOVE):
+        return 0
+    if excess > config.number(CONF_HEAT_CAP_ABOVE):
+        return int(config.number(CONF_FAN_HEAT_CAP))
+    return None
 
 
 def _fan_level(
@@ -696,6 +784,17 @@ def _fan_level(
             capped_from = level
         level = 1
 
+    # Last, so it beats everything including air quality. Ventilating against
+    # indoor humidity with hotter outside air makes the humidity worse rather
+    # than better, because warmer air carries far more water. It also overrides
+    # the floor above: with it warmer outside the damper is shut either way.
+    if mode is not Mode.HEATING:
+        ceiling = _heat_ceiling(config, _heat_excess(inputs, hub))
+        if ceiling is not None and level > ceiling:
+            if capped_from is None:
+                capped_from = level
+            level, reason, requested_by = ceiling, FanReason.HEAT_PROTECTION, None
+
     return int(_clamp(level, FAN_MIN, FAN_MAX)), reason, requested_by, capped_from
 
 
@@ -713,15 +812,17 @@ def evaluate(
     # The dwell timers are carried forward before anything can return early, so
     # that a controller switched off for ten minutes does not come back with a
     # fresh timer and a fan that has forgotten the bathroom.
+    surplus_since, surplus, surplus_detail = _surplus(inputs, hub, state)
     new_state = EngineState(
         co2_high_since=_track_co2(inputs, hub, state),
-        pv_surplus_since=_track_pv(inputs, hub, state),
+        surplus_since=surplus_since,
     )
     config = EffectiveConfig(hub)
     raw = {
         "outdoor": inputs.outdoor.as_dict(),
         "forecast_max": None if inputs.forecast_max is None else inputs.forecast_max.as_dict(),
-        "pv_power": None if inputs.pv_power is None else inputs.pv_power.as_dict(),
+        "extract": None if inputs.extract is None else inputs.extract.as_dict(),
+        "surplus": None if inputs.surplus is None else inputs.surplus.as_dict(),
         "heat_release": inputs.heat_release.as_dict(),
         "cool_release": inputs.cool_release.as_dict(),
         "compressor_running": inputs.compressor_running.as_dict(),
@@ -739,7 +840,7 @@ def evaluate(
                 holiday=holiday,
                 heating_active=False,
                 outdoor=None,
-                pv_surplus=False,
+                surplus=False,
             )
             for room in inputs.rooms
         )
@@ -784,7 +885,9 @@ def evaluate(
         if heat_release is None:
             reason = Reason.RELEASE_LOCKED
     elif effective_mode is Mode.COOLING:
-        wanted, reason, cool_gates, _ = _cool_wanted(config, inputs)
+        wanted, reason, cool_gates, _ = _cool_wanted(
+            config, inputs, surplus=surplus, surplus_detail=surplus_detail
+        )
         gates.extend(cool_gates)
         cool_release, lockout = _release(
             wanted=wanted,
@@ -814,10 +917,6 @@ def evaluate(
         if heat_release is not None
         else (not inputs.heat_release.missing and bool(inputs.heat_release.value))
     )
-    pv_surplus = (
-        new_state.pv_surplus_since is not None
-        and inputs.now - new_state.pv_surplus_since >= PV_SURPLUS_DWELL
-    )
     is_night = _is_night(config, inputs.now)
 
     rooms = tuple(
@@ -830,7 +929,7 @@ def evaluate(
             holiday=holiday,
             heating_active=bool(heating_active),
             outdoor=outdoor,
-            pv_surplus=pv_surplus,
+            surplus=surplus,
         )
         for room in inputs.rooms
     )
@@ -911,6 +1010,8 @@ def _system_message(
         head = f"Cooling released, a room is above {config.number(CONF_COOL_RELEASE_ABOVE)} °C"
     elif reason is Reason.COOL_NOT_NEEDED:
         head = "Cooling allowed but no room is warm enough to need it"
+    elif reason is Reason.COOL_NO_SURPLUS:
+        head = "Cooling needed but held back, there is no surplus to spend on it"
     elif reason is Reason.RELEASE_LOCKED:
         head = "Release left alone, it changed less than 30 min ago and the compressor is running"
     elif reason is Reason.OUTDOOR_UNAVAILABLE:

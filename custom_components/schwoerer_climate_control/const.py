@@ -36,9 +36,9 @@ CO2_DWELL = timedelta(minutes=5)
 #: wrong without data.
 OUTDOOR_MAX_AGE = timedelta(minutes=30)
 
-#: How long PV surplus has to hold before it is allowed to raise a setpoint.
-#: Long enough that a cloud gap is not an invitation to heat the house.
-PV_SURPLUS_DWELL = timedelta(minutes=20)
+#: How long surplus has to hold before anything is spent on it. Long enough
+#: that a bright gap in an overcast sky is not an invitation.
+SURPLUS_DWELL = timedelta(minutes=20)
 
 #: How long a state change waits for others to join it. A contact that chatters,
 #: or six rooms reporting within a second of each other, is one evaluation.
@@ -169,6 +169,7 @@ class Reason(StrEnum):
     HEAT_TOO_WARM = "heat_too_warm"
     COOL_RELEASED = "cool_released"
     COOL_NOT_NEEDED = "cool_not_needed"
+    COOL_NO_SURPLUS = "cool_no_surplus"
     RELEASE_LOCKED = "release_locked"
     VENTILATION_ONLY = "ventilation_only"
     FORECAST_WARM = "forecast_warm"
@@ -182,6 +183,9 @@ class FanReason(StrEnum):
     CO2_HIGH = "co2_high"
     HUMIDITY_HIGH = "humidity_high"
     NIGHT_COOLING = "night_cooling"
+    #: Outside is warmer than the air leaving the house, so ventilating imports
+    #: heat. Beats everything, including air quality.
+    HEAT_PROTECTION = "heat_protection"
     HOLIDAY = "holiday"
     NIGHT = "night"
     NORMAL = "normal"
@@ -198,7 +202,7 @@ class RoomReason(StrEnum):
     NORMAL = "normal"
     COOLING = "cooling"
     VENTILATION_ONLY = "ventilation_only"
-    PV_SURPLUS = "pv_surplus"
+    SURPLUS = "surplus"
 
 
 ################################################################################
@@ -231,8 +235,17 @@ CONF_BYPASS_SENSOR = "bypass_sensor"
 
 # Optional extra inputs.
 CONF_FORECAST_ENTITY = "forecast_entity"
-CONF_PV_SENSOR = "pv_sensor"
 CONF_NOTIFY_SERVICE = "notify_service"
+
+#: What counts as having energy to spare, which is a policy question rather than
+#: a measurement: a house with a battery, a tariff and a car has to decide for
+#: itself. An on/off entity is read as it stands; a number is read against the
+#: two thresholds below. Used both for cooling and for raising setpoints.
+CONF_SURPLUS_ENTITY = "surplus_entity"
+CONF_SURPLUS_START = "surplus_start"
+#: Lower than the start, so that spending the surplus does not immediately
+#: withdraw the reason for spending it.
+CONF_SURPLUS_STOP = "surplus_stop"
 
 # A room.
 CONF_ACTUATOR = "actuator"
@@ -284,9 +297,14 @@ CONF_FAN_NIGHT_COOLING = "fan_night_cooling"
 CONF_HUMIDITY_HIGH = "humidity_high"
 CONF_CO2_HIGH = "co2_high"
 
-# PV surplus.
-CONF_PV_SURPLUS_ABOVE = "pv_surplus_above"
-CONF_PV_TARGET_BOOST = "pv_target_boost"
+# What surplus is spent on.
+CONF_SURPLUS_TARGET_BOOST = "surplus_target_boost"
+
+# Not ventilating against the heat. The reference is the extract air, because
+# that is what decides the temperature the supply air arrives at.
+CONF_HEAT_CAP_ABOVE = "heat_cap_above"
+CONF_FAN_HEAT_CAP = "fan_heat_cap"
+CONF_FAN_OFF_ABOVE = "fan_off_above"
 
 #: The lowest and highest the device accepts for a room setpoint. Asking for
 #: anything outside this is rejected by the field rather than clamped, so the
@@ -328,8 +346,16 @@ DEFAULTS: dict[str, object] = {
     CONF_FAN_NIGHT_COOLING: 3,
     CONF_HUMIDITY_HIGH: 70.0,
     CONF_CO2_HIGH: 1000.0,
-    CONF_PV_SURPLUS_ABOVE: 1500.0,
-    CONF_PV_TARGET_BOOST: 1.0,
+    CONF_SURPLUS_START: 800.0,
+    CONF_SURPLUS_STOP: 100.0,
+    CONF_SURPLUS_TARGET_BOOST: 1.0,
+    # Below three kelvin the supply air arrives within a few tenths of the
+    # extract air, so there is nothing worth protecting against.
+    CONF_HEAT_CAP_ABOVE: 3.0,
+    CONF_FAN_HEAT_CAP: 1,
+    # A warm afternoon and a heat wave are not the same thing. Past this much
+    # excess the fan is allowed to stop altogether.
+    CONF_FAN_OFF_ABOVE: 10.0,
 }
 
 #: Settings a room may override. Everything else is the hub's alone, because a

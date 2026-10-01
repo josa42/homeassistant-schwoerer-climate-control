@@ -195,9 +195,15 @@ and it is only changed when it has been stable for at least 30 minutes or the he
 pump is not currently running. Both are taken from `automation.heizung`, where
 they have proven themselves, and both were missing in v1.
 
-In cooling mode the same lockout applies to the cooling release. The cheapest path
-wins: night cooling through the fan level first, and the heat pump release only
-when that is not enough.
+In cooling mode the same lockout applies to the cooling release, and the release
+additionally waits for energy the house has no better use for. Cooling with the
+compressor is the one expensive thing this controller can switch on, so it runs
+on surplus rather than on demand. The cheapest path still comes first: night air
+through the fan level, and the compressor only when that is not enough.
+
+The lockout wins on the way back out. Losing the surplus does not stop a
+compressor that started less than half an hour ago, because short-cycling it is
+the worse outcome and half an hour of cooling is a small price.
 
 ## Cooling and the bypass
 
@@ -271,6 +277,30 @@ expiry can be added later.
 Rooms with an open window ask for nothing. Their humidity and CO₂ readings are
 measuring outdoors.
 
+### Not ventilating against the heat
+
+Above all of that sits one ceiling. While it is warmer outside than the air
+leaving the house, ventilating imports heat, and past a few kelvin the fan is
+capped; far past it, it stops altogether. A warm afternoon and a heat wave are
+not the same thing, so there are two steps rather than one.
+
+The reference is the extract air rather than a room, because that is what the
+exchanger recovers from and therefore what decides the temperature the supply air
+arrives at: roughly extract plus one minus the efficiency, times the excess. At
+39 °C outside against 23 °C extract and a measured 0.9, the supply air arrives at
+24.6 °C, so every cubic metre carries 1.6 K into the house.
+
+This ceiling beats air quality, which is the one place where the rule that air
+quality always wins does not hold. It is not a compromise. Air at 39 °C carries
+far more water than room air at 23 °C, so ventilating against indoor humidity on
+a hot day makes the humidity worse rather than better. CO₂ is the case against,
+since nothing but fresh air removes it, and it was still decided the same way:
+one ceiling, no exception, and a window is the answer on the rare afternoon when
+that is not enough.
+
+It does not apply while heating, where the warmth coming in is the point. An
+explicit fan stage still overrides it, as it overrides everything.
+
 ## Sensor failure
 
 A failure is never silent and never makes a rule quietly disappear. v1 did
@@ -315,8 +345,16 @@ pump release is reported, which is what `automation.heizung` does today.
 | Input | Effect |
 | --- | --- |
 | Weather forecast | The day's maximum instead of the instantaneous reading for the heat pump release, the trigger for night cooling in cooling mode, and later an input to automating the mode. |
-| PV surplus | Raise setpoints or release auxiliary heat while a surplus is available. The reason has to explain why it is 21.5 rather than 20.0 °C. |
+| Energy to spare | Raises setpoints while it is available, and is the condition for cooling with the compressor at all. The reason has to explain why it is 21.5 rather than 20.0 °C. |
 | Door contacts | Fed into the same window-open logic, several contacts per room. |
+
+What counts as spare is the house's own judgement rather than this integration's.
+An on/off entity is taken at its word and acts at once; a number is read against a
+start and a stop threshold, with the stop lower so that spending the surplus does
+not immediately withdraw the reason for spending it. Production is not surplus: in
+a house with a battery, a tariff and a car, 2 kW of production under 2 kW of load
+is nothing to spare, and only the house knows that. A template sensor of its own
+is therefore the expected answer, and the decision records the value it read.
 
 Holiday stays a manual switch. Automating it is something Home Assistant can do,
 as it does today.

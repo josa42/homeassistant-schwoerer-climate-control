@@ -8,6 +8,11 @@
   that cannot be discovered, so the form says how many it found and creates one
   per thermostat, with a checkbox that starts ticked. Contacts, humidity and CO₂
   sensors belong to other integrations and are added per room afterwards.
+- The fan no longer ventilates against the heat. While it is warmer outside than
+  the air leaving the house the level is capped, and past a larger excess the fan
+  stops altogether, because a warm afternoon and a heat wave are not the same
+  thing. This beats air quality: air at 39 °C carries far more water than room air
+  at 23, so ventilating against indoor humidity on a hot day makes it worse.
 
 ### Changed
 
@@ -18,6 +23,18 @@
   same list is now published under one name, `failed_inputs`, both there and on
   every decision sensor. The entity id follows the name, so the old entity stays
   behind as an orphan to delete once.
+- Cooling with the compressor waits for energy the house has no better use for.
+  It is the one expensive thing this controller can switch on, so it runs on
+  surplus rather than on demand. The release lockout still wins on the way back
+  out: losing the surplus does not stop a compressor that started less than half
+  an hour ago, because short-cycling it is the worse outcome.
+- One surplus input replaces the three PV fields, and drives both the cooling
+  release and the setpoint boost. An on/off entity is taken at its word and acts
+  at once; a number is read against a start and a stop threshold, the stop lower
+  so that spending the surplus does not withdraw the reason for spending it.
+  Production is not surplus, which the old field could not express: 2 kW under
+  2 kW of load is nothing to spare. Existing entries are migrated rather than
+  cleared.
 
 ### Fixed
 

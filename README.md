@@ -89,6 +89,17 @@ Air quality wins on the fan: humidity or CO₂ in any room raises the level, at
 night too. The fan select caps or raises that with `quiet` and `boost`, and a
 fixed stage overrides everything.
 
+With one exception, which sits above air quality. While it is warmer outside than
+the air leaving the house, ventilating imports heat, so the fan is capped, and in
+a heat wave it stops. Ventilating against indoor humidity with 39 °C air makes the
+humidity worse rather than better, because the warmer air carries far more water.
+
+Cooling with the compressor only runs while there is energy to spare. It is the
+one expensive thing here, and it waits for a surplus rather than for demand. What
+counts as spare is yours to define: give it an on/off entity and it is taken at
+its word, or a number read against two thresholds. Production is not surplus, so
+in a house with a battery a template sensor of your own is the honest answer.
+
 <br><br>
 
 ## Writing as little as possible
