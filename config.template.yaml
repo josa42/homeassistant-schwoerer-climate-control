@@ -1,0 +1,17 @@
+
+# Loads default set of integrations. Do not remove.
+default_config:
+
+automation: !include automations.yaml
+script: !include scripts.yaml
+scene: !include scenes.yaml
+
+logger:
+  default: info
+  logs:
+    # Every evaluation logs the intent and the reason behind it.
+    custom_components.schwoerer_climate_control: debug
+
+# Development fixtures for a fake WGT (room climates, fan level select, heat
+# pump switches) belong here, so the integration can be exercised without a
+# real device. They are added with the adapter they exercise.

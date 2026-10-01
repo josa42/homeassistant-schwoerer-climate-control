@@ -1,0 +1,12 @@
+{
+  "domain": "schwoerer_climate_control",
+  "name": "Schwörer Climate Control",
+  "after_dependencies": ["schwoerer_lueftung", "weather"],
+  "codeowners": ["@josa42"],
+  "documentation": "https://github.com/josa42/homeassistant-schwoerer-climate-control",
+  "integration_type": "hub",
+  "iot_class": "calculated",
+  "issue_tracker": "https://github.com/josa42/homeassistant-schwoerer-climate-control/issues",
+  "requirements": [],
+  "version": "0.0.0"
+}
