@@ -40,9 +40,11 @@ what the fan level should be. Rooms the WGT does not heat can join in through an
 1. Go to **Settings** → **Devices & Services**
 2. Click **+ Add Integration** and search for "Schwörer Climate Control"
 3. Confirm the unit's entities. They are discovered, so this is normally a matter
-   of pressing submit.
-4. On the integration page, choose **Add a room** once per room. Each room gets
-   its own device.
+   of pressing submit. The form says how many rooms it found on the unit, and
+   takes them all on unless you say otherwise. Each room gets its own device.
+4. For a room the unit does not heat, choose **Add a room** on the integration
+   page. Contacts, humidity and CO₂ sensors belong to other integrations and are
+   added per room, through **Change this room**.
 
 Shared settings live on the hub and every room inherits them. Any of them can be
 overridden per room, and each decision records both the value it used and which

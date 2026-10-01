@@ -2,8 +2,23 @@
 
 ## Unreleased
 
+### Added
+
+- Setup takes on every room of the unit at once. A room of a WGT holds nothing
+  that cannot be discovered, so the form says how many it found and creates one
+  per thermostat, with a checkbox that starts ticked. Contacts, humidity and CO₂
+  sensors belong to other integrations and are added per room afterwards.
+
+### Changed
+
+- Two rooms can no longer drive one thermostat. They would write the same
+  setpoint from two decisions, and whichever ran last would win.
+
 ### Fixed
 
+- A room found through its thermostat rather than through its device was called
+  "WGT - Wohnzimmer Raumthermostat". That name went on to be its device name, its
+  entity id and every logbook entry about it.
 - The subentry translations carried a `title` key that does not belong in them,
   so hassfest reported a warning once per translation file. `entry_type` already
   says what a room is, which is what that key was trying to do.

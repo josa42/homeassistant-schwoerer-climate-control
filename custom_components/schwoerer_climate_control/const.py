@@ -208,6 +208,9 @@ SUBENTRY_TYPE_ROOM = "room"
 
 CONF_NAME = "name"
 CONF_DRY_RUN = "dry_run"
+#: Asked once, on the setup form, and never stored: whether to take on the rooms
+#: of the unit straight away.
+CONF_ADD_ROOMS = "add_rooms"
 
 # The unit, as entities of the schwoerer_lueftung integration.
 CONF_OUTDOOR_SENSOR = "outdoor_sensor"

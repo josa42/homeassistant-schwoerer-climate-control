@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Die Anlage",
-        "description": "Die Entities der Lüftungs-Integration, die dieser Controller liest und steuert. Soweit möglich erkannt, es geht also meist nur ums Bestätigen.",
+        "description": "Die Entities der Lüftungs-Integration, die dieser Controller liest und steuert. Soweit möglich erkannt, es geht also meist nur ums Bestätigen. Gefundene Räume an der Anlage: {rooms}.",
         "data": {
           "outdoor_sensor": "Außentemperatur",
           "fan_select": "Luftstufe",
@@ -18,7 +18,8 @@
           "dry_run": "Testbetrieb",
           "supply_temperature_sensor": "Zulufttemperatur (T3)",
           "extract_temperature_sensor": "Ablufttemperatur (T5)",
-          "bypass_sensor": "Bypass-Zustand"
+          "bypass_sensor": "Bypass-Zustand",
+          "add_rooms": "Räume der Anlage übernehmen"
         },
         "data_description": {
           "operation_mode_select": "Wird nur gelesen, nie geschrieben. Die Entscheidungen setzen Handbetrieb voraus, sonst erscheint eine Reparatur.",
@@ -29,7 +30,8 @@
           "dry_run": "Alles wird entschieden und veröffentlicht, nichts geschrieben. Bei einer neuen Installation an.",
           "supply_temperature_sensor": "Optional. Zusammen mit Abluft und Außentemperatur sagt das, ob der Bypass überhaupt Luft bewegt.",
           "extract_temperature_sensor": "Optional. Die Luft, die das Haus verlässt, also das, was zurückzugewinnen ist.",
-          "bypass_sensor": "Optional, und wird nur gelesen. Für die Klappe gibt es auf keiner bekannten Firmware ein Schreibregister."
+          "bypass_sensor": "Optional, und wird nur gelesen. Für die Klappe gibt es auf keiner bekannten Firmware ein Schreibregister.",
+          "add_rooms": "Legt pro Thermostat der Anlage einen Raum an, mit dem Namen den er schon hat. Kontakte, Feuchte und CO₂ gehören zu anderen Integrationen und kommen danach pro Raum dazu."
         }
       }
     },
@@ -177,6 +179,9 @@
       "initiate_flow": {
         "user": "Raum hinzufügen",
         "reconfigure": "Raum ändern"
+      },
+      "error": {
+        "already_controlled": "Ein anderer Raum steuert dieses Thermostat schon. Zwei Räume an einem Thermostat würden denselben Sollwert aus zwei Entscheidungen schreiben."
       }
     }
   },

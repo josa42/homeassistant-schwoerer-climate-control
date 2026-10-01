@@ -19,6 +19,7 @@ from homeassistant.config_entries import (
     ConfigEntry,
     ConfigFlow,
     ConfigFlowResult,
+    ConfigSubentryData,
     ConfigSubentryFlow,
     OptionsFlow,
     SubentryFlowResult,
@@ -28,6 +29,7 @@ from homeassistant.helpers import selector
 
 from .const import (
     CONF_ACTUATOR,
+    CONF_ADD_ROOMS,
     CONF_AUX_HEAT_BELOW,
     CONF_AUX_HEAT_OFF_AT_NIGHT,
     CONF_BYPASS_SENSOR,
@@ -82,7 +84,7 @@ from .const import (
     TARGET_MIN,
     ActuatorKind,
 )
-from .discovery import discover_rooms, discover_unit
+from .discovery import DiscoveredRoom, discover_rooms, discover_unit
 
 TITLE = "Schwörer Climate Control"
 
@@ -143,6 +145,41 @@ def unit_schema(values: Mapping[str, Any]) -> vol.Schema:
         selector.BooleanSelector()
     )
     return vol.Schema(schema)
+
+
+def setup_schema(values: Mapping[str, Any], rooms_found: int) -> vol.Schema:
+    """The setup form: the unit, and whether to take its rooms on at once.
+
+    The rooms of a WGT hold nothing that cannot be discovered, so being asked
+    about each of six in turn is six dialogs for no decision. The question is
+    still asked, because creating six devices unannounced is the kind of thing
+    that is annoying exactly once.
+    """
+    schema = dict(unit_schema(values).schema)
+    if rooms_found:
+        schema[vol.Required(CONF_ADD_ROOMS, default=True)] = selector.BooleanSelector()
+    return vol.Schema(schema)
+
+
+def room_subentries(rooms: list[DiscoveredRoom]) -> list[ConfigSubentryData]:
+    """One room per thermostat of the unit, with what discovery can know.
+
+    Contacts, humidity and CO2 belong to other integrations and cannot be
+    guessed, so they stay empty and are added per room afterwards.
+    """
+    return [
+        ConfigSubentryData(
+            data={
+                CONF_NAME: room.name,
+                CONF_ACTUATOR: ActuatorKind.WGT_ROOM.value,
+                CONF_CLIMATE_ENTITY: room.climate_entity,
+            },
+            subentry_type=SUBENTRY_TYPE_ROOM,
+            title=room.name,
+            unique_id=None,
+        )
+        for room in rooms
+    ]
 
 
 def thresholds_schema(values: Mapping[str, Any]) -> vol.Schema:
@@ -310,11 +347,22 @@ class ClimateControlConfigFlow(ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Confirm the unit's entities, which are discovered where possible."""
+        rooms = discover_rooms(self.hass)
+
         if user_input is not None:
-            return self.async_create_entry(title=TITLE, data=_prune(user_input))
+            data = _prune(user_input)
+            # Asked, not stored: it describes this one moment, not the setup.
+            add_rooms = data.pop(CONF_ADD_ROOMS, False)
+            return self.async_create_entry(
+                title=TITLE,
+                data=data,
+                subentries=room_subentries(rooms) if add_rooms else None,
+            )
 
         return self.async_show_form(
-            step_id="user", data_schema=unit_schema(discover_unit(self.hass))
+            step_id="user",
+            data_schema=setup_schema(discover_unit(self.hass), len(rooms)),
+            description_placeholders={"rooms": str(len(rooms))},
         )
 
     @classmethod
@@ -372,6 +420,12 @@ class RoomSubentryFlow(ConfigSubentryFlow):
         """Add a room, suggesting the next one of the unit that has no entry."""
         if user_input is not None:
             data = _prune(user_input)
+            if self._taken(data[CONF_CLIMATE_ENTITY]):
+                return self.async_show_form(
+                    step_id="user",
+                    data_schema=room_schema(data),
+                    errors={CONF_CLIMATE_ENTITY: "already_controlled"},
+                )
             return self.async_create_entry(title=data[CONF_NAME], data=data)
 
         return self.async_show_form(
@@ -384,12 +438,30 @@ class RoomSubentryFlow(ConfigSubentryFlow):
         subentry = self._get_reconfigure_subentry()
         if user_input is not None:
             data = _prune(user_input)
+            if self._taken(data[CONF_CLIMATE_ENTITY], excluding=subentry.subentry_id):
+                return self.async_show_form(
+                    step_id="reconfigure",
+                    data_schema=room_schema(data),
+                    errors={CONF_CLIMATE_ENTITY: "already_controlled"},
+                )
             return self.async_update_and_abort(
                 self._get_entry(), subentry, title=data[CONF_NAME], data=data
             )
 
         return self.async_show_form(
             step_id="reconfigure", data_schema=room_schema(subentry.data)
+        )
+
+    def _taken(self, climate_entity: str, excluding: str | None = None) -> bool:
+        """Whether another room already drives this thermostat.
+
+        Two rooms on one thermostat would write the same setpoint from two
+        decisions, and whichever ran last would win.
+        """
+        return any(
+            subentry.data.get(CONF_CLIMATE_ENTITY) == climate_entity
+            for subentry_id, subentry in self._get_entry().subentries.items()
+            if subentry_id != excluding
         )
 
     def _suggestion(self) -> dict[str, Any]:

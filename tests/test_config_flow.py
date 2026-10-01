@@ -162,6 +162,31 @@ async def test_an_optional_field_can_be_cleared_again(
     assert result["data"][CONF_TARGET_NORMAL] == 21.0, "the other step survives"
 
 
+async def test_a_room_is_named_after_the_room_and_not_the_thermostat(
+    hass: HomeAssistant,
+) -> None:
+    # A device is called "WGT - Wohnzimmer" and its thermostat "WGT - Wohnzimmer
+    # Raumthermostat". Neither spelling is what the room is called, and the
+    # name ends up on the device, the entity id and every logbook entry.
+    hass.states.async_set(
+        "climate.wgt_room_1",
+        "fan_only",
+        {
+            "entity_type": "climate_room",
+            "room_number": 1,
+            "friendly_name": "WGT - Wohnzimmer Raumthermostat",
+        },
+    )
+    assert discover_rooms(hass)[0].name == "Wohnzimmer"
+
+
+async def test_a_room_with_no_name_at_all_still_gets_one(hass: HomeAssistant) -> None:
+    hass.states.async_set(
+        "climate.wgt_room_4", "fan_only", {"entity_type": "climate_room", "room_number": 4}
+    )
+    assert discover_rooms(hass)[0].name == "Room 4"
+
+
 async def test_the_dry_run_default_is_on(hass: HomeAssistant, unit) -> None:
     unit()
     result = await hass.config_entries.flow.async_init(
@@ -169,3 +194,124 @@ async def test_the_dry_run_default_is_on(hass: HomeAssistant, unit) -> None:
     )
     schema = result["data_schema"]({**HUB_DATA, CONF_DRY_RUN: True})
     assert schema[CONF_DRY_RUN] is True
+
+
+def fake_wgt_rooms(hass: HomeAssistant, *names: str) -> None:
+    """Thermostats of the unit, as the ventilation integration reports them."""
+    for number, name in enumerate(names, start=1):
+        hass.states.async_set(
+            f"climate.wgt_room_{number}",
+            "fan_only",
+            {
+                "entity_type": "climate_room",
+                "room_number": number,
+                "friendly_name": f"WGT - {name} Raumthermostat",
+            },
+        )
+
+
+async def test_setup_takes_on_every_room_of_the_unit(
+    hass: HomeAssistant, unit
+) -> None:
+    # A WGT room holds nothing that cannot be discovered, so being asked about
+    # each of six in turn is six dialogs for no decision.
+    unit()
+    fake_wgt_rooms(hass, "Wohnzimmer", "Schlafzimmer", "Arbeitszimmer")
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+    assert "3" in result["description_placeholders"]["rooms"]
+
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {**HUB_DATA, "add_rooms": True}
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+
+    rooms = list(result["subentries"])
+    assert [room["title"] for room in rooms] == [
+        "Wohnzimmer",
+        "Schlafzimmer",
+        "Arbeitszimmer",
+    ]
+    assert rooms[0]["data"][CONF_CLIMATE_ENTITY] == "climate.wgt_room_1"
+    assert rooms[0]["data"]["actuator"] == "wgt_room"
+    assert "add_rooms" not in result["data"], "the question is not a setting"
+
+
+async def test_setup_can_decline_the_rooms(hass: HomeAssistant, unit) -> None:
+    unit()
+    fake_wgt_rooms(hass, "Wohnzimmer")
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {**HUB_DATA, "add_rooms": False}
+    )
+    assert list(result["subentries"]) == []
+
+
+async def test_the_rooms_arrive_as_devices(hass: HomeAssistant, unit) -> None:
+    unit()
+    fake_wgt_rooms(hass, "Wohnzimmer", "Schlafzimmer")
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+    await hass.config_entries.flow.async_configure(
+        result["flow_id"], {**HUB_DATA, "add_rooms": True}
+    )
+    await hass.async_block_till_done()
+
+    assert hass.states.get("sensor.wohnzimmer_decision") is not None
+    assert hass.states.get("sensor.schlafzimmer_decision") is not None
+
+
+async def test_one_thermostat_cannot_be_driven_by_two_rooms(
+    hass: HomeAssistant, entry, unit, setup_entry
+) -> None:
+    # Two rooms on one thermostat would write the same setpoint from two
+    # decisions, and whichever ran last would win.
+    unit()
+    await setup_entry(entry)
+
+    result = await hass.config_entries.subentries.async_init(
+        (entry.entry_id, SUBENTRY_TYPE_ROOM), context={"source": SOURCE_USER}
+    )
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"],
+        {
+            CONF_NAME: "Noch mal Wohnzimmer",
+            "actuator": "wgt_room",
+            CONF_CLIMATE_ENTITY: "climate.wohnzimmer",
+            "aux_heat_off_at_night": False,
+        },
+    )
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {CONF_CLIMATE_ENTITY: "already_controlled"}
+
+
+async def test_a_room_may_keep_its_own_thermostat_when_reconfigured(
+    hass: HomeAssistant, entry, unit, setup_entry
+) -> None:
+    unit()
+    await setup_entry(entry)
+    subentry_id = next(iter(entry.subentries))
+
+    result = await hass.config_entries.subentries.async_init(
+        (entry.entry_id, SUBENTRY_TYPE_ROOM),
+        context={"source": "reconfigure", "subentry_id": subentry_id},
+    )
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"],
+        {
+            CONF_NAME: "Wohnzimmer",
+            "actuator": "wgt_room",
+            CONF_CLIMATE_ENTITY: "climate.wohnzimmer",
+            CONF_TARGET_NORMAL: 21.5,
+            "aux_heat_off_at_night": False,
+        },
+    )
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "reconfigure_successful"
+    assert entry.subentries[subentry_id].data[CONF_TARGET_NORMAL] == 21.5

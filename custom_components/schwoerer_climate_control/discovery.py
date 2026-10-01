@@ -50,6 +50,9 @@ ROOM_CLIMATE_TYPE = "climate_room"
 #: Device name prefixes the ventilation integration puts in front of a room.
 _NAME_PREFIXES = ("WGT - ", "WRT - ")
 
+#: What a room's entity is called after its name, which a device is not.
+_NAME_SUFFIXES = ("Raumthermostat", "Room thermostat", "Thermostat")
+
 
 @dataclass(frozen=True, slots=True)
 class DiscoveredRoom:
@@ -94,6 +97,15 @@ def discover_rooms(hass: HomeAssistant) -> list[DiscoveredRoom]:
     return sorted(rooms, key=lambda room: room.number)
 
 
+def _clean(name: str) -> str:
+    """A room's name without what the ventilation integration wraps it in."""
+    for prefix in _NAME_PREFIXES:
+        name = name.removeprefix(prefix)
+    for suffix in _NAME_SUFFIXES:
+        name = name.removesuffix(suffix).removesuffix(suffix.lower())
+    return name.strip()
+
+
 def _room_name(
     hass: HomeAssistant,
     entities: er.EntityRegistry,
@@ -101,18 +113,20 @@ def _room_name(
     entity_id: str,
     number: int,
 ) -> str:
-    """What the room is called, preferring what the user named its device."""
+    """What the room is called, preferring what the user named its device.
+
+    The friendly name is the fallback and needs more taken off it: a device is
+    called "WGT - Wohnzimmer" while its thermostat is called "WGT - Wohnzimmer
+    Raumthermostat", and neither spelling is what the room is called.
+    """
     entry = entities.async_get(entity_id)
     if entry is not None and entry.device_id:
         device = devices.async_get(entry.device_id)
-        if device is not None:
-            name = device.name_by_user or device.name or ""
-            for prefix in _NAME_PREFIXES:
-                name = name.removeprefix(prefix)
-            if name:
-                return name
+        if device is not None and (name := _clean(device.name_by_user or device.name or "")):
+            return name
 
-    if (state := hass.states.get(entity_id)) is not None:
-        if friendly := state.attributes.get("friendly_name"):
-            return str(friendly)
+    state = hass.states.get(entity_id)
+    if state is not None and (friendly := state.attributes.get("friendly_name")):
+        if name := _clean(str(friendly)):
+            return name
     return f"Room {number}"
