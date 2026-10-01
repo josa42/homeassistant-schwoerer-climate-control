@@ -21,5 +21,5 @@
   "issue_tracker": "https://github.com/josa42/homeassistant-schwoerer-climate-control/issues",
   "requirements": [],
   "single_config_entry": true,
-  "version": "0.0.0"
+  "version": "0.1.0"
 }
