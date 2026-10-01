@@ -12,13 +12,25 @@ Repository `homeassistant-schwoerer-climate-control`, domain
 The symptom was that written values did not arrive. The cause is in the write
 path, not in the logic.
 
-`schwoerer_lueftung` writes one field and then triggers a full device poll
-(`coordinator.py`, `async_write`). v1 wrote around 15 fields per evaluation: six
-room setpoints, six HVAC modes, the fan level and two switches. Each of those
-writes dragged a poll over the same Modbus connection behind it. On top of that,
-v1 did not only evaluate every 15 minutes but on every state change of every
-window, humidity and CO₂ sensor it watched, and every evaluation wrote all values
-again without checking whether they had changed.
+v1 wrote around 15 fields on every evaluation: six room setpoints, six HVAC
+modes, the fan level and two switches. It wrote all of them unconditionally,
+without checking whether any had changed, and it evaluated not only every 15
+minutes but on every state change of every window, humidity and CO₂ sensor it
+watched. Its own coordinator debounces that to one evaluation per 10 seconds, so
+sustained sensor traffic meant about 1.5 Modbus writes per second against a
+device that is also polled in full every 30 seconds.
+
+`schwoerer_lueftung` additionally triggers a full device poll after each field it
+writes (`coordinator.py`, `async_write`), which amplifies a burst. Less than it
+appears: it passes no debouncer of its own, so the default applies, a 10 second
+cooldown with `immediate=True`, and `Debouncer._async_schedule_or_call_now` only
+sets a flag while that timer runs. A burst inside one cooldown therefore costs
+one immediate poll and one trailing one rather than one per write. The volume of
+writes is the problem, and the amplification makes it worse.
+
+Writing unconditionally is what turned a controller into a load generator, so
+writing only what differs is the fix that matters. See Write discipline below for
+what that leaves to do.
 
 Two further defects from v1, fixed independently of that:
 
@@ -63,6 +75,19 @@ Protection against overloading Modbus sits on two layers with separate
 responsibilities. Transport safety belongs to `schwoerer_lueftung`, because that
 is where the connection lives and because every other writer benefits, the UI and
 hand-written scripts included. Discipline about intent belongs to the controller.
+
+The controller half is not waiting on the other one. Diffing removes almost all
+of the traffic by itself: in a steady state the controller writes no register at
+all, and what is left are real transitions. Pacing inside a bundle is the
+controller's own to do. And because the diff compares against what the device
+reports rather than against what the controller believes it sent, a dropped write
+is retried on the next evaluation without anything extra being built, and a
+register that never holds its value can be counted and reported.
+
+What the lower layer adds, and the controller cannot, is protection against other
+writers. A dashboard card, a script or a hand on the thermostat still reaches the
+device unmetered, and a concurrent write from the UI can undo the controller's
+pacing. That makes the queue worth having rather than a precondition.
 
 In `schwoerer_lueftung` (separate repository, separate piece of work):
 
