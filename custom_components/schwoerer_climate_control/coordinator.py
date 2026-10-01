@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections import deque
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
@@ -26,7 +27,15 @@ from typing import Any
 from homeassistant.config_entries import ConfigEntry, ConfigSubentry
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import Event, EventStateChangedData, HomeAssistant, callback
-from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import (
+    device_registry as dr,
+)
+from homeassistant.helpers import (
+    entity_registry as er,
+)
+from homeassistant.helpers import (
+    issue_registry as ir,
+)
 from homeassistant.helpers.debounce import Debouncer
 from homeassistant.helpers.event import async_call_later, async_track_state_change_event
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
@@ -46,13 +55,21 @@ from .const import (
     CONF_HEAT_RELEASE_SWITCH,
     CONF_HUMIDITY_SENSOR,
     CONF_NAME,
+    CONF_NOTIFY_SERVICE,
     CONF_OPERATION_MODE_SELECT,
     CONF_OUTDOOR_SENSOR,
     CONF_PV_SENSOR,
     CONF_TEMPERATURE_SENSOR,
+    DECISION_HISTORY,
+    DEGRADED_GRACE,
     DOMAIN,
     EVALUATION_DEBOUNCE,
+    EVENT_DECISION,
+    ISSUE_INPUT_UNAVAILABLE,
+    ISSUE_OPERATION_MODE,
+    ISSUE_STUCK_WRITE,
     MIN_WRITE_INTERVAL,
+    NOTIFY_WINDOW,
     STUCK_AFTER,
     SUBENTRY_TYPE_ROOM,
     TICK_INTERVAL,
@@ -60,6 +77,7 @@ from .const import (
     ActuatorKind,
     FanMode,
     Mode,
+    Reason,
 )
 from .engine import EngineState, Inputs, RoomInputs, evaluate
 from .models import Reading, SystemDecision
@@ -136,6 +154,12 @@ class ClimateControlCoordinator(DataUpdateCoordinator[SystemDecision]):
         self._stuck: dict[str, int] = {}
         self._rate_limited = False
         self._evaluated = False
+
+        self.history: deque[SystemDecision] = deque(maxlen=DECISION_HISTORY)
+        self._signatures: dict[str, tuple] = {}
+        self._degraded_since: datetime | None = None
+        self._pending: list[str] = []
+        self._notify_scheduled = False
 
     ############################################################################
     # Configuration
@@ -362,7 +386,166 @@ class ClimateControlCoordinator(DataUpdateCoordinator[SystemDecision]):
             holiday=self.holiday,
         )
         await self._apply(decision)
+        self._record(decision)
         return decision
+
+    ############################################################################
+    # Writing down what changed
+
+    def _record(self, decision: SystemDecision) -> None:
+        """Keep the decision, log what changed, and raise what needs raising."""
+        self.history.append(decision)
+        self._log_changes(decision)
+        self._update_issues(decision)
+
+    def _decision_entity_id(self, unique_id: str) -> str | None:
+        """The decision sensor a logbook entry should hang off."""
+        return er.async_get(self.hass).async_get_entity_id(
+            "sensor", DOMAIN, f"{unique_id}_decision"
+        )
+
+    def _log_changes(self, decision: SystemDecision) -> None:
+        """One logbook entry per changed decision, carrying its sentence."""
+        # Read before logging, because logging is what replaces it.
+        previous = self._signatures.get("system")
+        self._log_one(
+            "system",
+            decision.signature,
+            self.entry.title,
+            decision.message,
+            self._decision_entity_id(self.entry.entry_id),
+        )
+        if self._notable(decision, previous):
+            self._queue_notification(decision.message)
+
+        by_id = {room.room_id: room for room in self.rooms.values()}
+        for room_decision in decision.rooms:
+            room = by_id.get(room_decision.room_id)
+            self._log_one(
+                room_decision.room_id,
+                room_decision.signature,
+                room_decision.name,
+                room_decision.message,
+                None if room is None else self._decision_entity_id(room.subentry_id),
+            )
+
+    def _log_one(
+        self,
+        key: str,
+        signature: tuple,
+        name: str,
+        message: str,
+        entity_id: str | None,
+    ) -> None:
+        previous = self._signatures.get(key)
+        self._signatures[key] = signature
+        if previous is None or previous == signature:
+            # Nothing to say on the first pass, and nothing to say when nothing
+            # changed. A setpoint that drifts by a tenth is not an entry.
+            return
+        self.hass.bus.async_fire(
+            EVENT_DECISION,
+            {
+                "name": name,
+                "message": message,
+                "entity_id": entity_id,
+                "key": key,
+            },
+        )
+
+    def _notable(self, decision: SystemDecision, previous: tuple | None) -> bool:
+        """Whether a person should be told, as opposed to it being logged.
+
+        A release turning over is worth a message: it is the expensive thing in
+        the house starting or stopping. A fan level is not.
+        """
+        if previous is None:
+            return False
+        was_heat, was_cool, was_reason = previous[2], previous[3], previous[1]
+        if (decision.heat_release, decision.cool_release) != (was_heat, was_cool):
+            return True
+        return str(decision.reason) != was_reason and decision.reason in (
+            Reason.FROST_PROTECTION,
+            Reason.OUTDOOR_UNAVAILABLE,
+        )
+
+    ############################################################################
+    # Telling a person
+
+    def _queue_notification(self, line: str) -> None:
+        """Gather a line, and send what has gathered after the window."""
+        if not self.hub_config.get(CONF_NOTIFY_SERVICE):
+            return
+        prefix = "[dry run] " if self.dry_run else ""
+        self._pending.append(f"{prefix}{line}")
+        if self._notify_scheduled:
+            return
+        self._notify_scheduled = True
+        self._unsubscribe.append(
+            async_call_later(
+                self.hass, NOTIFY_WINDOW.total_seconds(), self._flush_notifications
+            )
+        )
+
+    @callback
+    def _flush_notifications(self, _now: datetime) -> None:
+        self._notify_scheduled = False
+        lines, self._pending = self._pending, []
+        service = self.hub_config.get(CONF_NOTIFY_SERVICE)
+        if not lines or not service or "." not in service:
+            return
+        domain, _, name = service.partition(".")
+        self.hass.async_create_task(
+            self.hass.services.async_call(
+                domain, name, {"message": "\n".join(lines)}, blocking=False
+            )
+        )
+
+    ############################################################################
+    # Repairs
+
+    def _update_issues(self, decision: SystemDecision) -> None:
+        """Raise and clear the three things worth a repair entry."""
+        self._issue(
+            ISSUE_OPERATION_MODE,
+            self.operation_mode not in (None, REQUIRED_OPERATION_MODE),
+            {"mode": str(self.operation_mode)},
+        )
+
+        now = dt_util.utcnow()
+        if decision.degraded:
+            self._degraded_since = self._degraded_since or now
+            long_enough = now - self._degraded_since >= DEGRADED_GRACE
+        else:
+            self._degraded_since = None
+            long_enough = False
+        self._issue(
+            ISSUE_INPUT_UNAVAILABLE,
+            long_enough,
+            {"inputs": ", ".join(decision.degraded)},
+        )
+
+        self._issue(
+            ISSUE_STUCK_WRITE,
+            bool(self.stuck_writes),
+            {"writes": ", ".join(self.stuck_writes)},
+        )
+
+    def _issue(
+        self, issue_id: str, raised: bool, placeholders: dict[str, str]
+    ) -> None:
+        if raised:
+            ir.async_create_issue(
+                self.hass,
+                DOMAIN,
+                issue_id,
+                is_fixable=False,
+                severity=ir.IssueSeverity.WARNING,
+                translation_key=issue_id,
+                translation_placeholders=placeholders,
+            )
+        else:
+            ir.async_delete_issue(self.hass, DOMAIN, issue_id)
 
     ############################################################################
     # Writing

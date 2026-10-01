@@ -57,6 +57,26 @@ TICK_INTERVAL = timedelta(minutes=15)
 #: burst while it is also being polled.
 WRITE_SPACING = 1.0
 
+#: Fired whenever a decision changes, and rendered into the logbook. The logbook
+#: is where the history lives: a sensor's attributes answer what is true now, and
+#: the question is almost always about three in the morning.
+EVENT_DECISION = f"{DOMAIN}_decision"
+
+#: How long a configured input may be unreadable before it is worth a repair.
+#: A sensor with a flat battery is a repair; one that misses a poll is not.
+DEGRADED_GRACE = timedelta(hours=1)
+
+#: How long notifications gather before they are sent. A change that touches six
+#: rooms arrives as one message rather than as six.
+NOTIFY_WINDOW = timedelta(minutes=5)
+
+#: Decisions kept for the diagnostics download.
+DECISION_HISTORY = 50
+
+ISSUE_OPERATION_MODE = "operation_mode"
+ISSUE_INPUT_UNAVAILABLE = "input_unavailable"
+ISSUE_STUCK_WRITE = "stuck_write"
+
 #: How many evaluations in a row a register may fail to take its value before
 #: it is reported. Diffing against what the device reports means a dropped
 #: write is retried by itself, so one failure is normal and worth no noise.

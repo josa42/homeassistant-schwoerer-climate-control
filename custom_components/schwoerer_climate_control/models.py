@@ -183,6 +183,21 @@ class RoomDecision:
             "degraded": list(self.degraded),
         }
 
+    @property
+    def signature(self) -> tuple:
+        """What counts as a change worth writing down.
+
+        The numbers that move on their own are left out, so a setpoint drifting
+        by a tenth is not an entry and a room that starts heating is.
+        """
+        return (
+            str(self.intent),
+            str(self.reason),
+            self.target_temperature,
+            self.auxiliary_heat,
+            self.heating_enabled,
+        )
+
     def as_dict(self) -> dict[str, Any]:
         """Full record for diagnostics."""
         return {
@@ -261,6 +276,18 @@ class SystemDecision:
             "outdoor_temperature": self.inputs.get("outdoor", {}).get("value"),
             "degraded": list(self.degraded),
         }
+
+    @property
+    def signature(self) -> tuple:
+        """What counts as a change worth writing down."""
+        return (
+            str(self.intent),
+            str(self.reason),
+            self.heat_release,
+            self.cool_release,
+            self.fan_level,
+            None if self.fan_reason is None else str(self.fan_reason),
+        )
 
     def as_dict(self) -> dict[str, Any]:
         """Full record for diagnostics."""
