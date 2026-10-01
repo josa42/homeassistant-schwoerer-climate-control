@@ -40,6 +40,28 @@ OUTDOOR_MAX_AGE = timedelta(minutes=30)
 #: Long enough that a cloud gap is not an invitation to heat the house.
 PV_SURPLUS_DWELL = timedelta(minutes=20)
 
+#: How long a state change waits for others to join it. A contact that chatters,
+#: or six rooms reporting within a second of each other, is one evaluation.
+EVALUATION_DEBOUNCE = timedelta(seconds=30)
+
+#: The floor under how often anything may be written, however many triggers
+#: fire. The ceiling on the load this integration can put on the bus.
+MIN_WRITE_INTERVAL = timedelta(seconds=60)
+
+#: Re-evaluated this often even when nothing changed, so that a time boundary
+#: such as the night setback takes effect without a trigger.
+TICK_INTERVAL = timedelta(minutes=15)
+
+#: Pause between two writes of one bundle. Six setpoints at 20:00 go out one
+#: after another rather than together, so the unit is never asked to take a
+#: burst while it is also being polled.
+WRITE_SPACING = 1.0
+
+#: How many evaluations in a row a register may fail to take its value before
+#: it is reported. Diffing against what the device reports means a dropped
+#: write is retried by itself, so one failure is normal and worth no noise.
+STUCK_AFTER = 3
+
 
 class Mode(StrEnum):
     """Which direction of energy is allowed.
@@ -162,8 +184,34 @@ class RoomReason(StrEnum):
 ################################################################################
 # Configuration keys
 
-CONF_ROOMS = "rooms"
+SUBENTRY_TYPE_ROOM = "room"
+
 CONF_NAME = "name"
+CONF_DRY_RUN = "dry_run"
+
+# The unit, as entities of the schwoerer_lueftung integration.
+CONF_OUTDOOR_SENSOR = "outdoor_sensor"
+CONF_FAN_SELECT = "fan_select"
+CONF_HEAT_RELEASE_SWITCH = "heat_release_switch"
+CONF_COOL_RELEASE_SWITCH = "cool_release_switch"
+CONF_FUNCTION_SELECT = "function_select"
+CONF_COMPRESSOR_SENSOR = "compressor_sensor"
+#: Read, never written. The decisions assume the unit is in manual, and a repair
+#: says so when it is not.
+CONF_OPERATION_MODE_SELECT = "operation_mode_select"
+
+# Optional extra inputs.
+CONF_FORECAST_ENTITY = "forecast_entity"
+CONF_PV_SENSOR = "pv_sensor"
+CONF_NOTIFY_SERVICE = "notify_service"
+
+# A room.
+CONF_ACTUATOR = "actuator"
+CONF_CLIMATE_ENTITY = "climate_entity"
+CONF_TEMPERATURE_SENSOR = "temperature_sensor"
+CONF_CONTACTS = "contacts"
+CONF_HUMIDITY_SENSOR = "humidity_sensor"
+CONF_CO2_SENSOR = "co2_sensor"
 
 # Heating setpoints.
 CONF_TARGET_NORMAL = "target_normal"
