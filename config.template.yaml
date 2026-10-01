@@ -12,6 +12,165 @@ logger:
     # Every evaluation logs the intent and the reason behind it.
     custom_components.schwoerer_climate_control: debug
 
-# Development fixtures for a fake WGT (room climates, fan level select, heat
-# pump switches) belong here, so the integration can be exercised without a
-# real device. They are added with the adapter they exercise.
+# --- Development fixtures ---------------------------------------------------
+#
+# A fake WGT, so the integration can be exercised without a real unit and
+# without waiting for the weather. Every input the controller reads is backed by
+# a helper you can drag in the UI, and every output is a template entity you can
+# watch it write to.
+#
+# These carry no entity_type attribute, so discovery does not pre-fill the setup
+# form here. Enter the entity ids below by hand; discovery is a convenience and
+# not part of what needs testing.
+
+input_number:
+  dev_outdoor:
+    name: Dev outdoor temperature
+    min: -20
+    max: 40
+    step: 0.5
+    initial: 5
+    unit_of_measurement: "°C"
+  dev_room_temperature:
+    name: Dev room temperature
+    min: 0
+    max: 40
+    step: 0.5
+    initial: 20
+    unit_of_measurement: "°C"
+  dev_humidity:
+    name: Dev humidity
+    min: 0
+    max: 100
+    step: 1
+    initial: 50
+    unit_of_measurement: "%"
+
+input_boolean:
+  dev_window:
+    name: Dev window open
+  dev_heat_release:
+    name: Dev heat pump heating release
+  dev_cool_release:
+    name: Dev heat pump cooling release
+  dev_room_heater:
+    name: Dev room heater relay
+
+input_select:
+  dev_fan_speed:
+    name: Dev fan speed
+    options: ["0", "1", "2", "3", "4", "automatic", "linear"]
+    initial: "2"
+  dev_operation_mode:
+    name: Dev operation mode
+    options: ["off", "manual", "winter", "summer", "summer_exhaust"]
+    initial: manual
+  dev_heating_cooling_function:
+    name: Dev heating cooling function
+    options: ["off", "heating", "cooling", "auto_outdoor_temp", "auto_digital_input"]
+    initial: "off"
+  dev_heat_pump_status:
+    name: Dev heat pump status
+    options: ["off", "heating", "cooling"]
+    initial: "off"
+
+template:
+  - sensor:
+      - name: Dev WGT outdoor temperature
+        unique_id: dev_wgt_outdoor
+        state: "{{ states('input_number.dev_outdoor') }}"
+        unit_of_measurement: "°C"
+        device_class: temperature
+        state_class: measurement
+      - name: Dev WGT room temperature
+        unique_id: dev_wgt_room_temperature
+        state: "{{ states('input_number.dev_room_temperature') }}"
+        unit_of_measurement: "°C"
+        device_class: temperature
+        state_class: measurement
+      - name: Dev WGT room humidity
+        unique_id: dev_wgt_room_humidity
+        state: "{{ states('input_number.dev_humidity') }}"
+        unit_of_measurement: "%"
+        device_class: humidity
+        state_class: measurement
+      - name: Dev WGT heat pump status
+        unique_id: dev_wgt_heat_pump_status
+        state: "{{ states('input_select.dev_heat_pump_status') }}"
+
+  - binary_sensor:
+      - name: Dev WGT window
+        unique_id: dev_wgt_window
+        device_class: window
+        state: "{{ is_state('input_boolean.dev_window', 'on') }}"
+
+  - switch:
+      - name: Dev WGT heat release
+        unique_id: dev_wgt_heat_release
+        state: "{{ is_state('input_boolean.dev_heat_release', 'on') }}"
+        turn_on:
+          - action: input_boolean.turn_on
+            target: { entity_id: input_boolean.dev_heat_release }
+        turn_off:
+          - action: input_boolean.turn_off
+            target: { entity_id: input_boolean.dev_heat_release }
+      - name: Dev WGT cool release
+        unique_id: dev_wgt_cool_release
+        state: "{{ is_state('input_boolean.dev_cool_release', 'on') }}"
+        turn_on:
+          - action: input_boolean.turn_on
+            target: { entity_id: input_boolean.dev_cool_release }
+        turn_off:
+          - action: input_boolean.turn_off
+            target: { entity_id: input_boolean.dev_cool_release }
+      - name: Dev room heater
+        unique_id: dev_room_heater
+        state: "{{ is_state('input_boolean.dev_room_heater', 'on') }}"
+        turn_on:
+          - action: input_boolean.turn_on
+            target: { entity_id: input_boolean.dev_room_heater }
+        turn_off:
+          - action: input_boolean.turn_off
+            target: { entity_id: input_boolean.dev_room_heater }
+
+  - select:
+      - name: Dev WGT fan level
+        unique_id: dev_wgt_fan_level
+        state: "{{ states('input_select.dev_fan_speed') }}"
+        options: "{{ state_attr('input_select.dev_fan_speed', 'options') }}"
+        select_option:
+          - action: input_select.select_option
+            target: { entity_id: input_select.dev_fan_speed }
+            data: { option: "{{ option }}" }
+      - name: Dev WGT operation mode
+        unique_id: dev_wgt_operation_mode
+        state: "{{ states('input_select.dev_operation_mode') }}"
+        options: "{{ state_attr('input_select.dev_operation_mode', 'options') }}"
+        select_option:
+          - action: input_select.select_option
+            target: { entity_id: input_select.dev_operation_mode }
+            data: { option: "{{ option }}" }
+      - name: Dev WGT heating cooling function
+        unique_id: dev_wgt_function
+        state: "{{ states('input_select.dev_heating_cooling_function') }}"
+        options: "{{ state_attr('input_select.dev_heating_cooling_function', 'options') }}"
+        select_option:
+          - action: input_select.select_option
+            target: { entity_id: input_select.dev_heating_cooling_function }
+            data: { option: "{{ option }}" }
+
+# A room the unit does not heat, to exercise the generic actuator. A WGT room
+# thermostat cannot be faked in YAML, because there is no template climate
+# platform, so rooms of the unit itself are tested against the real device.
+climate:
+  - platform: generic_thermostat
+    name: Dev room
+    unique_id: dev_room_thermostat
+    heater: switch.dev_room_heater
+    target_sensor: sensor.dev_wgt_room_temperature
+    min_temp: 10
+    max_temp: 30
+    cold_tolerance: 0.3
+    hot_tolerance: 0.3
+    min_cycle_duration:
+      minutes: 5
