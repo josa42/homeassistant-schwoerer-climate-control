@@ -143,6 +143,10 @@ class RoomDecision:
     #: Whether the room's auxiliary heater should run. ``None`` for a room that
     #: has none, so that "off" is never written to something that cannot heat.
     auxiliary_heat: bool | None = None
+    #: Whether a room heated by something other than the WGT may run at all.
+    #: ``None`` for a WGT room, where the hvac mode is the auxiliary heater and
+    #: there is no separate on and off.
+    heating_enabled: bool | None = None
     window_open: bool = False
     gates: tuple[Gate, ...] = ()
     inputs: dict[str, Any] = field(default_factory=dict)
@@ -168,6 +172,7 @@ class RoomDecision:
             "message": self.message,
             "target_temperature": self.target_temperature,
             "auxiliary_heat": self.auxiliary_heat,
+            "heating_enabled": self.heating_enabled,
             "window_open": self.window_open,
             "room_temperature": self.inputs.get("temperature", {}).get("value"),
             "degraded": list(self.degraded),
@@ -183,6 +188,7 @@ class RoomDecision:
             "message": self.message,
             "target_temperature": self.target_temperature,
             "auxiliary_heat": self.auxiliary_heat,
+            "heating_enabled": self.heating_enabled,
             "window_open": self.window_open,
             "gates": [gate.as_dict() for gate in self.gates],
             "inputs": self.inputs,

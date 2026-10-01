@@ -74,6 +74,21 @@ class HeatingCoolingFunction(StrEnum):
     COOLING = "cooling"
 
 
+class ActuatorKind(StrEnum):
+    """What kind of thing a room is heated by.
+
+    A WGT room thermostat uses its hvac mode for the second heating stage, so
+    "heat" there means the auxiliary heater. Anything else uses its hvac mode to
+    say whether it may run at all. One field cannot mean both.
+    """
+
+    #: A room on the WGT, whose hvac mode is the auxiliary heater.
+    WGT_ROOM = "wgt_room"
+    #: Any other climate entity, a radiator valve or a thermostat in front of a
+    #: relay, whose hvac mode is on or off.
+    GENERIC = "generic"
+
+
 class Intent(StrEnum):
     """What the system decided to do, as one word."""
 
@@ -107,6 +122,7 @@ class Reason(StrEnum):
 
     CONTROLLER_DISABLED = "controller_disabled"
     OUTDOOR_UNAVAILABLE = "outdoor_unavailable"
+    FROST_PROTECTION = "frost_protection"
     HEAT_RELEASED = "heat_released"
     HEAT_TOO_WARM = "heat_too_warm"
     COOL_RELEASED = "cool_released"
@@ -173,6 +189,11 @@ CONF_AUX_HEAT_BELOW = "aux_heat_below"
 CONF_AUX_HEAT_OFF_AT_NIGHT = "aux_heat_off_at_night"
 CONF_COOL_RELEASE_ABOVE = "cool_release_above"
 
+#: Below this room temperature the house is protected whatever the mode says.
+#: Ventilation disables heating entirely, and a mode left on ventilation through
+#: a cold January is not a reason to let the house freeze.
+CONF_FROST_PROTECTION_BELOW = "frost_protection_below"
+
 # Fan.
 CONF_FAN_NORMAL = "fan_normal"
 CONF_FAN_NIGHT = "fan_night"
@@ -220,6 +241,7 @@ DEFAULTS: dict[str, object] = {
     CONF_AUX_HEAT_BELOW: 10.0,
     CONF_AUX_HEAT_OFF_AT_NIGHT: False,
     CONF_COOL_RELEASE_ABOVE: 26.0,
+    CONF_FROST_PROTECTION_BELOW: 12.0,
     CONF_FAN_NORMAL: 2,
     CONF_FAN_NIGHT: 1,
     CONF_FAN_HOLIDAY: 1,
@@ -247,6 +269,7 @@ OVERRIDABLE: tuple[str, ...] = (
     CONF_NIGHT_END,
     CONF_AUX_HEAT_BELOW,
     CONF_AUX_HEAT_OFF_AT_NIGHT,
+    CONF_FROST_PROTECTION_BELOW,
     CONF_HUMIDITY_HIGH,
     CONF_CO2_HIGH,
 )

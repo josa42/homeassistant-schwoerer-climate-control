@@ -13,8 +13,10 @@ from custom_components.schwoerer_climate_control.const import (
     CONF_CO2_HIGH,
     CONF_FAN_AIR_QUALITY,
     CONF_FAN_QUIET_MAX,
+    CONF_FROST_PROTECTION_BELOW,
     CONF_HUMIDITY_HIGH,
     CONF_TARGET_NORMAL,
+    ActuatorKind,
     FanMode,
     FanReason,
     HeatingCoolingFunction,
@@ -276,14 +278,105 @@ def test_the_auxiliary_heater_is_off_at_night_in_a_bedroom() -> None:
     assert by_name["wohnzimmer"].auxiliary_heat is True
 
 
-def test_a_room_without_an_auxiliary_heater_is_never_written() -> None:
-    inputs = given(rooms=(a_room(has_auxiliary_heat=False),))
-    assert run(inputs)[0].rooms[0].auxiliary_heat is None
+def test_a_wgt_room_has_no_separate_on_and_off() -> None:
+    # Its hvac mode is the auxiliary heater, so there is nothing else to say.
+    assert run()[0].rooms[0].heating_enabled is None
+
+
+################################################################################
+# Rooms the WGT does not heat
+
+
+def a_generic_room(**overrides: Any) -> RoomInputs:
+    return a_room("bad", actuator=ActuatorKind.GENERIC, **overrides)
+
+
+def test_a_foreign_heater_is_enabled_while_heating_is_the_mode() -> None:
+    decision, _ = run(given(rooms=(a_generic_room(),)))
+    room = decision.rooms[0]
+    assert room.heating_enabled is True
+    assert room.auxiliary_heat is None, "it has no second stage to enable"
+    assert room.target_temperature == 20.0
+
+
+def test_a_foreign_heater_is_off_while_cooling() -> None:
+    inputs = given(outdoor=read(28.0), rooms=(a_generic_room(temperature=read(26.0)),))
+    decision, _ = run(inputs, mode=Mode.COOLING)
+    assert decision.rooms[0].heating_enabled is False
+    assert "heater off" in decision.rooms[0].message
+
+
+def test_a_foreign_heater_is_off_while_ventilating() -> None:
+    assert run(given(rooms=(a_generic_room(),)), mode=Mode.VENTILATION)[0].rooms[
+        0
+    ].heating_enabled is False
+
+
+def test_a_foreign_heater_is_off_with_the_window_open() -> None:
+    inputs = given(rooms=(a_generic_room(contacts=(read(True),)),))
+    assert run(inputs)[0].rooms[0].heating_enabled is False
 
 
 def test_an_open_window_keeps_the_auxiliary_heater_off() -> None:
     inputs = given(rooms=(a_room(contacts=(read(True),)),))
     assert run(inputs)[0].rooms[0].auxiliary_heat is False
+
+
+################################################################################
+# Frost protection
+
+
+def test_frost_protection_overrides_ventilation() -> None:
+    inputs = given(rooms=(a_room(temperature=read(11.0)),))
+    decision, _ = run(inputs, mode=Mode.VENTILATION)
+    assert decision.mode is Mode.HEATING
+    assert decision.requested_mode is Mode.VENTILATION
+    assert decision.reason is Reason.FROST_PROTECTION
+    assert decision.heat_release is True
+    assert decision.gate_passed("frost_protection") is False
+    assert "Frost protection" in decision.message
+    assert "11.0" in decision.message
+
+
+def test_frost_protection_works_without_an_outdoor_reading() -> None:
+    # The one case where the ventilation fallback must not win: a freezing house
+    # with a dead outdoor sensor still needs heat.
+    inputs = given(
+        outdoor=read(5.0, age=timedelta(hours=5)),
+        rooms=(a_room(temperature=read(9.0)),),
+    )
+    decision, _ = run(inputs)
+    assert decision.mode is Mode.HEATING
+    assert decision.heat_release is True
+    assert "outdoor" in decision.degraded
+
+
+def test_frost_protection_ignores_a_warm_forecast() -> None:
+    inputs = given(
+        outdoor=read(8.0), forecast_max=read(20.0), rooms=(a_room(temperature=read(11.0)),)
+    )
+    assert run(inputs)[0].heat_release is True
+
+
+def test_the_frost_limit_is_overridable_per_room() -> None:
+    cellar = a_room("keller", temperature=read(9.0), config={CONF_FROST_PROTECTION_BELOW: 8.0})
+    decision, _ = run(given(rooms=(cellar,)), mode=Mode.VENTILATION)
+    assert decision.mode is Mode.VENTILATION, "9 is above this room's own limit"
+    assert decision.gate_passed("frost_protection") is True
+
+
+def test_frost_protection_does_not_heat_a_room_with_the_window_open() -> None:
+    # Heating harder against an open window is not protection, it is a bill.
+    cold = a_room(temperature=read(11.0), contacts=(read(True),))
+    decision, _ = run(given(rooms=(cold,)), mode=Mode.VENTILATION)
+    assert decision.mode is Mode.HEATING
+    assert decision.rooms[0].target_temperature == 12.0
+    assert decision.rooms[0].reason is RoomReason.WINDOW_OPEN
+
+
+def test_a_room_with_no_temperature_cannot_trigger_frost_protection() -> None:
+    inputs = given(rooms=(a_room(temperature=Reading()),))
+    assert run(inputs, mode=Mode.VENTILATION)[0].mode is Mode.VENTILATION
 
 
 ################################################################################

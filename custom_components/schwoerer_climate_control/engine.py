@@ -33,6 +33,7 @@ from .const import (
     CONF_FAN_NORMAL,
     CONF_FAN_QUIET_MAX,
     CONF_FORECAST_BLOCKS_ABOVE,
+    CONF_FROST_PROTECTION_BELOW,
     CONF_HEAT_RELEASE_BELOW,
     CONF_HUMIDITY_HIGH,
     CONF_NIGHT_END,
@@ -56,6 +57,7 @@ from .const import (
     TARGET_MAX,
     TARGET_MIN,
     TARGET_RESOLUTION,
+    ActuatorKind,
     FanMode,
     FanReason,
     HeatingCoolingFunction,
@@ -84,9 +86,8 @@ class RoomInputs:
     contacts: tuple[Reading, ...] = ()
     humidity: Reading | None = None
     co2: Reading | None = None
-    #: False for an actuator that can only hold a setpoint, with no second
-    #: heating stage to enable.
-    has_auxiliary_heat: bool = True
+    #: What heats the room, which decides what its hvac mode means.
+    actuator: ActuatorKind = ActuatorKind.WGT_ROOM
 
 
 @dataclass(frozen=True, slots=True)
@@ -214,8 +215,21 @@ def _track_pv(inputs: Inputs, hub: dict[str, Any], state: EngineState) -> dateti
     return state.pv_surplus_since or inputs.now
 
 
+def _frost_rooms(inputs: Inputs, hub: dict[str, Any]) -> tuple[str, ...]:
+    """Rooms that have fallen below their frost limit, named for the record."""
+    cold: list[str] = []
+    for room in inputs.rooms:
+        value = room.temperature.as_number()
+        if value is None:
+            continue
+        limit = EffectiveConfig(hub, room.config).number(CONF_FROST_PROTECTION_BELOW)
+        if value < limit:
+            cold.append(f"{room.name} at {value} °C below {limit} °C")
+    return tuple(cold)
+
+
 def _resolve_mode(
-    requested: Mode, inputs: Inputs
+    requested: Mode, inputs: Inputs, frost: tuple[str, ...]
 ) -> tuple[Mode, Gate, list[str]]:
     """The mode that can actually be acted on.
 
@@ -223,23 +237,31 @@ def _resolve_mode(
     release, the other to know whether outside air is worth having. Without one,
     ventilation is the honest answer, and it is the one state that cannot be
     wrong for lack of data.
+
+    Frost protection comes before both. It is the one thing that overrides what
+    was asked for, including the fallback, because a missing outdoor reading is
+    exactly the situation in which a freezing house most needs heat.
     """
     degraded: list[str] = []
-    if inputs.outdoor.stale(OUTDOOR_MAX_AGE):
+    usable = not inputs.outdoor.stale(OUTDOOR_MAX_AGE)
+    if usable:
+        outdoor_gate = Gate("outdoor_usable", True, "")
+    else:
         degraded.append("outdoor")
-        if requested is not Mode.VENTILATION:
-            age = inputs.outdoor.updated_ago
-            detail = (
-                "never reported"
-                if age is None
-                else f"last reported {age.total_seconds() / 60:.0f} min ago"
-            )
-            return (
-                Mode.VENTILATION,
-                Gate("outdoor_usable", False, detail),
-                degraded,
-            )
-    return requested, Gate("outdoor_usable", True, ""), degraded
+        age = inputs.outdoor.updated_ago
+        outdoor_gate = Gate(
+            "outdoor_usable",
+            False,
+            "never reported"
+            if age is None
+            else f"last reported {age.total_seconds() / 60:.0f} min ago",
+        )
+
+    if frost:
+        return Mode.HEATING, outdoor_gate, degraded
+    if not usable and requested is not Mode.VENTILATION:
+        return Mode.VENTILATION, outdoor_gate, degraded
+    return requested, outdoor_gate, degraded
 
 
 def _release(
@@ -275,9 +297,16 @@ def _release(
 
 
 def _heat_wanted(
-    config: EffectiveConfig, inputs: Inputs
+    config: EffectiveConfig, inputs: Inputs, *, frost: bool
 ) -> tuple[bool, Reason, list[Gate]]:
     """Whether the heat pump should be released, and why."""
+    if frost:
+        # Neither the threshold nor the forecast gets a say here. The house is
+        # already too cold, which is the one case that needs no further test.
+        return True, Reason.FROST_PROTECTION, [
+            Gate("frost_protection", False, "a room is below its frost limit")
+        ]
+
     outdoor = inputs.outdoor.as_number()
     threshold = config.number(CONF_HEAT_RELEASE_BELOW)
     hysteresis = config.number(CONF_RELEASE_HYSTERESIS)
@@ -467,7 +496,8 @@ def _room_decision(
     target = _quantize(_clamp(target, TARGET_MIN, TARGET_MAX))
 
     auxiliary: bool | None = None
-    if room.has_auxiliary_heat:
+    heating_enabled: bool | None = None
+    if room.actuator is ActuatorKind.WGT_ROOM:
         aux_below = config.number(CONF_AUX_HEAT_BELOW)
         off_at_night = bool(config.get(CONF_AUX_HEAT_OFF_AT_NIGHT))
         cold_enough = outdoor is not None and outdoor < aux_below
@@ -490,12 +520,18 @@ def _room_decision(
         )
         if off_at_night:
             gates.append(Gate("aux_allowed_now", not night, "off at night in this room"))
+    else:
+        # A heater of its own regulates its room; all this decides is whether it
+        # may run. The setpoint already carries holiday and the night setback.
+        heating_enabled = mode is Mode.HEATING and not window_open
+        gates.append(Gate("heating_allowed", heating_enabled, f"mode is {mode}"))
 
     message = _room_message(
         reason=reason,
         intent=intent,
         target=target,
         auxiliary=auxiliary,
+        heating_enabled=heating_enabled,
         config=config,
         temperature=temperature,
         outdoor=outdoor,
@@ -509,6 +545,7 @@ def _room_decision(
         message=message,
         target_temperature=target,
         auxiliary_heat=auxiliary,
+        heating_enabled=heating_enabled,
         window_open=window_open,
         gates=tuple(gates),
         inputs=raw,
@@ -523,6 +560,7 @@ def _room_message(
     intent: RoomIntent,
     target: float,
     auxiliary: bool | None,
+    heating_enabled: bool | None,
     config: EffectiveConfig,
     temperature: float | None,
     outdoor: float | None,
@@ -548,6 +586,8 @@ def _room_message(
         head += ", nothing heating or cooling"
     if auxiliary:
         head += f", auxiliary heater on because outdoor {outdoor} °C"
+    if heating_enabled is False:
+        head += ", heater off"
     return head
 
 
@@ -710,8 +750,9 @@ def evaluate(
             new_state,
         )
 
-    effective_mode, outdoor_gate, degraded = _resolve_mode(mode, inputs)
-    gates = [outdoor_gate]
+    frost = _frost_rooms(inputs, hub)
+    effective_mode, outdoor_gate, degraded = _resolve_mode(mode, inputs, frost)
+    gates = [outdoor_gate, Gate("frost_protection", not frost, "; ".join(frost))]
     outdoor = inputs.outdoor.as_number()
 
     heat_release: bool | None = None
@@ -720,7 +761,7 @@ def evaluate(
     fan_requested_by: str | None
 
     if effective_mode is Mode.HEATING:
-        wanted, reason, heat_gates = _heat_wanted(config, inputs)
+        wanted, reason, heat_gates = _heat_wanted(config, inputs, frost=bool(frost))
         gates.extend(heat_gates)
         heat_release, lockout = _release(
             wanted=wanted,
@@ -806,6 +847,7 @@ def evaluate(
             reason=reason,
             mode=effective_mode,
             requested=mode,
+            frost=frost,
             outdoor=outdoor,
             config=config,
             fan_level=fan_level,
@@ -838,6 +880,7 @@ def _system_message(
     reason: Reason,
     mode: Mode,
     requested: Mode,
+    frost: tuple[str, ...],
     outdoor: float | None,
     config: EffectiveConfig,
     fan_level: int,
@@ -847,7 +890,9 @@ def _system_message(
 ) -> str:
     """One sentence for the system decision."""
     threshold = config.number(CONF_HEAT_RELEASE_BELOW)
-    if reason is Reason.HEAT_RELEASED:
+    if reason is Reason.FROST_PROTECTION:
+        head = f"Frost protection, {'; '.join(frost)}"
+    elif reason is Reason.HEAT_RELEASED:
         head = f"Heating released, outdoor {outdoor} °C below {threshold} °C"
     elif reason is Reason.HEAT_TOO_WARM:
         head = f"Heating blocked, outdoor {outdoor} °C at or above {threshold} °C"
