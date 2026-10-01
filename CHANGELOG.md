@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- The subentry translations carried a `title` key that does not belong in them,
+  so hassfest reported a warning once per translation file. `entry_type` already
+  says what a room is, which is what that key was trying to do.
+
 ## 0.1.0 - 2026-10-01
 
 ### Added

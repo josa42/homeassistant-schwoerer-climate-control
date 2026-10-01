@@ -111,7 +111,6 @@
   },
   "config_subentries": {
     "room": {
-      "title": "Room",
       "step": {
         "user": {
           "title": "Add a room",
