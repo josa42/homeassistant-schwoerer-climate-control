@@ -24,6 +24,11 @@ from .const import (
     RoomReason,
 )
 
+#: Attributes a decision sensor publishes but the recorder must not write. Each
+#: one changes shape on every evaluation, and six rooms writing them four times
+#: an hour is a database full of the same trace.
+UNRECORDED_ATTRIBUTES = frozenset({"gates", "inputs", "settings"})
+
 
 @dataclass(frozen=True, slots=True)
 class Setting:

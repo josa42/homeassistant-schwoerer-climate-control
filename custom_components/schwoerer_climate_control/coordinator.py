@@ -125,6 +125,9 @@ class ClimateControlCoordinator(DataUpdateCoordinator[SystemDecision]):
         self.mode = Mode.VENTILATION
         self.holiday = False
         self.fan_request: FanMode | int = FanMode.AUTOMATIC
+        # Starts from the configuration and is then held here, so the switch can
+        # turn it off without a reload. On for a fresh install.
+        self.dry_run = bool({**entry.data, **entry.options}.get(CONF_DRY_RUN, True))
 
         self.engine_state = EngineState()
         self._unsubscribe: list[Any] = []
@@ -141,11 +144,6 @@ class ClimateControlCoordinator(DataUpdateCoordinator[SystemDecision]):
     def hub_config(self) -> dict[str, Any]:
         """The hub's settings, options layered over the initial data."""
         return {**self.entry.data, **self.entry.options}
-
-    @property
-    def dry_run(self) -> bool:
-        """Everything is evaluated and published, nothing is written."""
-        return bool(self.hub_config.get(CONF_DRY_RUN, True))
 
     def load_rooms(self) -> None:
         """Rebuild the room runtimes from the entry's subentries."""
@@ -189,6 +187,10 @@ class ClimateControlCoordinator(DataUpdateCoordinator[SystemDecision]):
 
     async def async_set_fan_request(self, request: FanMode | int) -> None:
         self.fan_request = request
+        await self.async_request_refresh()
+
+    async def async_set_dry_run(self, dry_run: bool) -> None:
+        self.dry_run = dry_run
         await self.async_request_refresh()
 
     ############################################################################

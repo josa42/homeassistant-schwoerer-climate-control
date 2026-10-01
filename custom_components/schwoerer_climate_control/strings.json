@@ -1,0 +1,251 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "The unit",
+        "description": "The entities of the ventilation integration this controller reads and drives. Discovered where possible, so this is normally a matter of confirming it.",
+        "data": {
+          "outdoor_sensor": "Outdoor temperature",
+          "fan_select": "Fan level",
+          "heat_release_switch": "Heat pump heating release",
+          "cool_release_switch": "Heat pump cooling release",
+          "function_select": "Heating and cooling function",
+          "compressor_sensor": "Heat pump status",
+          "operation_mode_select": "Operating mode",
+          "forecast_entity": "Weather forecast",
+          "pv_sensor": "PV power",
+          "notify_service": "Notification service",
+          "dry_run": "Dry run"
+        },
+        "data_description": {
+          "operation_mode_select": "Only read, never written. The decisions assume the unit is in manual mode, and a repair is raised when it is not.",
+          "compressor_sensor": "Used to decide whether a release may be changed: while the compressor is standing still it may change freely.",
+          "forecast_entity": "Optional. Lets a cold morning under a warm forecast skip the heat pump.",
+          "pv_sensor": "Optional. Raises setpoints while a surplus is available.",
+          "notify_service": "Optional, for example notify.mobile_app_phone. Messages are gathered for five minutes.",
+          "dry_run": "Everything is decided and published, nothing is written. On for a fresh install."
+        }
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "Already set up. One controller drives one unit."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Schwörer Climate Control",
+        "menu_options": {
+          "entities": "Entities",
+          "thresholds": "Temperatures, thresholds and fan levels"
+        }
+      },
+      "entities": {
+        "title": "Entities",
+        "data": {
+          "outdoor_sensor": "Outdoor temperature",
+          "fan_select": "Fan level",
+          "heat_release_switch": "Heat pump heating release",
+          "cool_release_switch": "Heat pump cooling release",
+          "function_select": "Heating and cooling function",
+          "compressor_sensor": "Heat pump status",
+          "operation_mode_select": "Operating mode",
+          "forecast_entity": "Weather forecast",
+          "pv_sensor": "PV power",
+          "notify_service": "Notification service",
+          "dry_run": "Dry run"
+        },
+        "data_description": {
+          "operation_mode_select": "Only read, never written. The decisions assume the unit is in manual mode, and a repair is raised when it is not.",
+          "compressor_sensor": "Used to decide whether a release may be changed: while the compressor is standing still it may change freely.",
+          "forecast_entity": "Optional. Lets a cold morning under a warm forecast skip the heat pump.",
+          "pv_sensor": "Optional. Raises setpoints while a surplus is available.",
+          "notify_service": "Optional, for example notify.mobile_app_phone. Messages are gathered for five minutes.",
+          "dry_run": "Everything is decided and published, nothing is written. On for a fresh install."
+        }
+      },
+      "thresholds": {
+        "title": "Temperatures, thresholds and fan levels",
+        "data": {
+          "target_normal": "Target temperature",
+          "target_night": "Target temperature at night",
+          "target_holiday": "Target temperature on holiday",
+          "target_window_open": "Target temperature with a window open",
+          "target_cool": "Cooling target",
+          "target_cool_holiday": "Cooling target on holiday",
+          "target_cool_window_open": "Cooling target with a window open",
+          "frost_protection_below": "Frost protection below",
+          "night_start": "Night starts",
+          "night_end": "Night ends",
+          "heat_release_below": "Release heating below",
+          "release_hysteresis": "Release hysteresis",
+          "forecast_blocks_above": "Forecast has a say above",
+          "aux_heat_below": "Auxiliary heat below",
+          "cool_release_above": "Release cooling above",
+          "fan_normal": "Fan level",
+          "fan_night": "Fan level at night",
+          "fan_holiday": "Fan level on holiday",
+          "fan_quiet_max": "Fan level ceiling when quiet",
+          "fan_boost": "Fan level when boosting",
+          "fan_air_quality": "Fan level for humidity or CO₂",
+          "fan_night_cooling": "Fan level for night cooling",
+          "humidity_high": "Humidity is high above",
+          "co2_high": "CO₂ is high above",
+          "pv_surplus_above": "PV surplus above",
+          "pv_target_boost": "Raise the target by"
+        }
+      }
+    }
+  },
+  "config_subentries": {
+    "room": {
+      "title": "Room",
+      "step": {
+        "user": {
+          "title": "Add a room",
+          "description": "Every setting left empty inherits the value from the hub, and a decision then names which level it came from.",
+          "data": {
+            "name": "Name",
+            "actuator": "Heated by",
+            "climate_entity": "Thermostat",
+            "temperature_sensor": "Temperature sensor",
+            "contacts": "Window and door contacts",
+            "humidity_sensor": "Humidity sensor",
+            "co2_sensor": "CO₂ sensor",
+            "aux_heat_off_at_night": "No auxiliary heat at night",
+            "target_normal": "Target temperature",
+            "target_night": "Target temperature at night",
+            "target_holiday": "Target temperature on holiday",
+            "target_window_open": "Target temperature with a window open",
+            "target_cool": "Cooling target",
+            "frost_protection_below": "Frost protection below",
+            "night_start": "Night starts",
+            "night_end": "Night ends",
+            "aux_heat_below": "Auxiliary heat below",
+            "humidity_high": "Humidity is high above",
+            "co2_high": "CO₂ is high above"
+          },
+          "data_description": {
+            "temperature_sensor": "Optional. Left empty, the thermostat's own reading is used.",
+            "contacts": "Optional, any number. A contact that cannot be read counts as open.",
+            "aux_heat_off_at_night": "For a bedroom, where the second stage is not wanted while anyone is asleep."
+          }
+        },
+        "reconfigure": {
+          "title": "Change this room",
+          "description": "Every setting left empty inherits the value from the hub, and a decision then names which level it came from.",
+          "data": {
+            "name": "Name",
+            "actuator": "Heated by",
+            "climate_entity": "Thermostat",
+            "temperature_sensor": "Temperature sensor",
+            "contacts": "Window and door contacts",
+            "humidity_sensor": "Humidity sensor",
+            "co2_sensor": "CO₂ sensor",
+            "aux_heat_off_at_night": "No auxiliary heat at night",
+            "target_normal": "Target temperature",
+            "target_night": "Target temperature at night",
+            "target_holiday": "Target temperature on holiday",
+            "target_window_open": "Target temperature with a window open",
+            "target_cool": "Cooling target",
+            "frost_protection_below": "Frost protection below",
+            "night_start": "Night starts",
+            "night_end": "Night ends",
+            "aux_heat_below": "Auxiliary heat below",
+            "humidity_high": "Humidity is high above",
+            "co2_high": "CO₂ is high above"
+          },
+          "data_description": {
+            "temperature_sensor": "Optional. Left empty, the thermostat's own reading is used.",
+            "contacts": "Optional, any number. A contact that cannot be read counts as open.",
+            "aux_heat_off_at_night": "For a bedroom, where the second stage is not wanted while anyone is asleep."
+          }
+        }
+      },
+      "entry_type": "Room",
+      "initiate_flow": {
+        "user": "Add a room",
+        "reconfigure": "Change this room"
+      }
+    }
+  },
+  "selector": {
+    "actuator": {
+      "options": {
+        "wgt_room": "A room of the unit",
+        "generic": "Its own heater"
+      }
+    }
+  },
+  "entity": {
+    "switch": {
+      "active": {
+        "name": "Active"
+      },
+      "holiday": {
+        "name": "Holiday"
+      },
+      "dry_run": {
+        "name": "Dry run"
+      }
+    },
+    "select": {
+      "mode": {
+        "name": "Mode",
+        "state": {
+          "heating": "Heating",
+          "ventilation": "Ventilation",
+          "cooling": "Cooling"
+        }
+      },
+      "fan": {
+        "name": "Fan",
+        "state": {
+          "automatic": "Automatic",
+          "quiet": "Quiet",
+          "boost": "Boost",
+          "0": "0",
+          "1": "1",
+          "2": "2",
+          "3": "3",
+          "4": "4"
+        }
+      }
+    },
+    "sensor": {
+      "decision": {
+        "name": "Decision",
+        "state": {
+          "disabled": "Off",
+          "heating": "Heating",
+          "cooling": "Cooling",
+          "ventilation": "Ventilation",
+          "window_open": "Window open",
+          "holiday": "Holiday",
+          "night": "Night",
+          "normal": "Normal",
+          "idle": "Idle"
+        }
+      }
+    },
+    "binary_sensor": {
+      "degraded": {
+        "name": "Degraded"
+      }
+    }
+  },
+  "issues": {
+    "operation_mode": {
+      "title": "The unit is not in manual mode",
+      "description": "The operating mode reads {mode}. This controller sets the fan level, the releases and every setpoint itself, and the unit's own seasonal programme works against that. Set the operating mode back to manual."
+    },
+    "input_unavailable": {
+      "title": "An input cannot be read",
+      "description": "These were configured and have not reported for a while: {inputs}. Each one falls back to a documented safe value, which the decision sensors name, but the decision is poorer for it."
+    },
+    "stuck_write": {
+      "title": "A value is not being accepted",
+      "description": "These were written repeatedly and still do not read back: {writes}. The write is retried on every evaluation, so this is the device or the connection rather than the controller."
+    }
+  }
+}

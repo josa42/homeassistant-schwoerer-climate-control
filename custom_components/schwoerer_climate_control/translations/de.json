@@ -1,0 +1,251 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Die Anlage",
+        "description": "Die Entities der Lüftungs-Integration, die dieser Controller liest und steuert. Soweit möglich erkannt, es geht also meist nur ums Bestätigen.",
+        "data": {
+          "outdoor_sensor": "Außentemperatur",
+          "fan_select": "Luftstufe",
+          "heat_release_switch": "Freigabe Wärmepumpe Heizen",
+          "cool_release_switch": "Freigabe Wärmepumpe Kühlen",
+          "function_select": "Heiz- und Kühlfunktion",
+          "compressor_sensor": "Status Wärmepumpe",
+          "operation_mode_select": "Betriebsart",
+          "forecast_entity": "Wettervorhersage",
+          "pv_sensor": "PV-Leistung",
+          "notify_service": "Benachrichtigungsdienst",
+          "dry_run": "Testbetrieb"
+        },
+        "data_description": {
+          "operation_mode_select": "Wird nur gelesen, nie geschrieben. Die Entscheidungen setzen Handbetrieb voraus, sonst erscheint eine Reparatur.",
+          "compressor_sensor": "Entscheidet, ob eine Freigabe geändert werden darf: solange der Kompressor steht, darf sie jederzeit wechseln.",
+          "forecast_entity": "Optional. Lässt einen kalten Morgen mit warmer Prognose ohne Wärmepumpe auskommen.",
+          "pv_sensor": "Optional. Hebt Solltemperaturen an, solange Überschuss anliegt.",
+          "notify_service": "Optional, zum Beispiel notify.mobile_app_handy. Nachrichten werden fünf Minuten gesammelt.",
+          "dry_run": "Alles wird entschieden und veröffentlicht, nichts geschrieben. Bei einer neuen Installation an."
+        }
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "Schon eingerichtet. Ein Controller steuert eine Anlage."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Schwörer Climate Control",
+        "menu_options": {
+          "entities": "Entities",
+          "thresholds": "Temperaturen, Schwellwerte und Luftstufen"
+        }
+      },
+      "entities": {
+        "title": "Entities",
+        "data": {
+          "outdoor_sensor": "Außentemperatur",
+          "fan_select": "Luftstufe",
+          "heat_release_switch": "Freigabe Wärmepumpe Heizen",
+          "cool_release_switch": "Freigabe Wärmepumpe Kühlen",
+          "function_select": "Heiz- und Kühlfunktion",
+          "compressor_sensor": "Status Wärmepumpe",
+          "operation_mode_select": "Betriebsart",
+          "forecast_entity": "Wettervorhersage",
+          "pv_sensor": "PV-Leistung",
+          "notify_service": "Benachrichtigungsdienst",
+          "dry_run": "Testbetrieb"
+        },
+        "data_description": {
+          "operation_mode_select": "Wird nur gelesen, nie geschrieben. Die Entscheidungen setzen Handbetrieb voraus, sonst erscheint eine Reparatur.",
+          "compressor_sensor": "Entscheidet, ob eine Freigabe geändert werden darf: solange der Kompressor steht, darf sie jederzeit wechseln.",
+          "forecast_entity": "Optional. Lässt einen kalten Morgen mit warmer Prognose ohne Wärmepumpe auskommen.",
+          "pv_sensor": "Optional. Hebt Solltemperaturen an, solange Überschuss anliegt.",
+          "notify_service": "Optional, zum Beispiel notify.mobile_app_handy. Nachrichten werden fünf Minuten gesammelt.",
+          "dry_run": "Alles wird entschieden und veröffentlicht, nichts geschrieben. Bei einer neuen Installation an."
+        }
+      },
+      "thresholds": {
+        "title": "Temperaturen, Schwellwerte und Luftstufen",
+        "data": {
+          "target_normal": "Solltemperatur",
+          "target_night": "Solltemperatur nachts",
+          "target_holiday": "Solltemperatur im Urlaub",
+          "target_window_open": "Solltemperatur bei offenem Fenster",
+          "target_cool": "Kühl-Solltemperatur",
+          "target_cool_holiday": "Kühl-Solltemperatur im Urlaub",
+          "target_cool_window_open": "Kühl-Solltemperatur bei offenem Fenster",
+          "frost_protection_below": "Frostschutz unter",
+          "night_start": "Nacht beginnt",
+          "night_end": "Nacht endet",
+          "heat_release_below": "Heizen freigeben unter",
+          "release_hysteresis": "Hysterese der Freigabe",
+          "forecast_blocks_above": "Prognose hat Stimmrecht über",
+          "aux_heat_below": "Zusatzheizer unter",
+          "cool_release_above": "Kühlen freigeben über",
+          "fan_normal": "Luftstufe",
+          "fan_night": "Luftstufe nachts",
+          "fan_holiday": "Luftstufe im Urlaub",
+          "fan_quiet_max": "Obergrenze der Luftstufe bei leise",
+          "fan_boost": "Luftstufe bei Boost",
+          "fan_air_quality": "Luftstufe bei Feuchte oder CO₂",
+          "fan_night_cooling": "Luftstufe für Nachtauskühlung",
+          "humidity_high": "Feuchte ist hoch über",
+          "co2_high": "CO₂ ist hoch über",
+          "pv_surplus_above": "PV-Überschuss über",
+          "pv_target_boost": "Sollwert anheben um"
+        }
+      }
+    }
+  },
+  "config_subentries": {
+    "room": {
+      "title": "Raum",
+      "step": {
+        "user": {
+          "title": "Raum hinzufügen",
+          "description": "Jede leer gelassene Einstellung erbt den Wert vom Hub, und eine Entscheidung nennt dann, von welcher Ebene die Zahl kam.",
+          "data": {
+            "name": "Name",
+            "actuator": "Geheizt durch",
+            "climate_entity": "Thermostat",
+            "temperature_sensor": "Temperatursensor",
+            "contacts": "Fenster- und Türkontakte",
+            "humidity_sensor": "Feuchtesensor",
+            "co2_sensor": "CO₂-Sensor",
+            "aux_heat_off_at_night": "Nachts kein Zusatzheizer",
+            "target_normal": "Solltemperatur",
+            "target_night": "Solltemperatur nachts",
+            "target_holiday": "Solltemperatur im Urlaub",
+            "target_window_open": "Solltemperatur bei offenem Fenster",
+            "target_cool": "Kühl-Solltemperatur",
+            "frost_protection_below": "Frostschutz unter",
+            "night_start": "Nacht beginnt",
+            "night_end": "Nacht endet",
+            "aux_heat_below": "Zusatzheizer unter",
+            "humidity_high": "Feuchte ist hoch über",
+            "co2_high": "CO₂ ist hoch über"
+          },
+          "data_description": {
+            "temperature_sensor": "Optional. Leer gelassen wird der Messwert des Thermostats verwendet.",
+            "contacts": "Optional, beliebig viele. Ein Kontakt, der sich nicht lesen lässt, gilt als offen.",
+            "aux_heat_off_at_night": "Für ein Schlafzimmer, in dem die zweite Stufe nachts nicht laufen soll."
+          }
+        },
+        "reconfigure": {
+          "title": "Raum ändern",
+          "description": "Jede leer gelassene Einstellung erbt den Wert vom Hub, und eine Entscheidung nennt dann, von welcher Ebene die Zahl kam.",
+          "data": {
+            "name": "Name",
+            "actuator": "Geheizt durch",
+            "climate_entity": "Thermostat",
+            "temperature_sensor": "Temperatursensor",
+            "contacts": "Fenster- und Türkontakte",
+            "humidity_sensor": "Feuchtesensor",
+            "co2_sensor": "CO₂-Sensor",
+            "aux_heat_off_at_night": "Nachts kein Zusatzheizer",
+            "target_normal": "Solltemperatur",
+            "target_night": "Solltemperatur nachts",
+            "target_holiday": "Solltemperatur im Urlaub",
+            "target_window_open": "Solltemperatur bei offenem Fenster",
+            "target_cool": "Kühl-Solltemperatur",
+            "frost_protection_below": "Frostschutz unter",
+            "night_start": "Nacht beginnt",
+            "night_end": "Nacht endet",
+            "aux_heat_below": "Zusatzheizer unter",
+            "humidity_high": "Feuchte ist hoch über",
+            "co2_high": "CO₂ ist hoch über"
+          },
+          "data_description": {
+            "temperature_sensor": "Optional. Leer gelassen wird der Messwert des Thermostats verwendet.",
+            "contacts": "Optional, beliebig viele. Ein Kontakt, der sich nicht lesen lässt, gilt als offen.",
+            "aux_heat_off_at_night": "Für ein Schlafzimmer, in dem die zweite Stufe nachts nicht laufen soll."
+          }
+        }
+      },
+      "entry_type": "Raum",
+      "initiate_flow": {
+        "user": "Raum hinzufügen",
+        "reconfigure": "Raum ändern"
+      }
+    }
+  },
+  "selector": {
+    "actuator": {
+      "options": {
+        "wgt_room": "Ein Raum der Anlage",
+        "generic": "Eigene Heizung"
+      }
+    }
+  },
+  "entity": {
+    "switch": {
+      "active": {
+        "name": "Aktiv"
+      },
+      "holiday": {
+        "name": "Urlaub"
+      },
+      "dry_run": {
+        "name": "Testbetrieb"
+      }
+    },
+    "select": {
+      "mode": {
+        "name": "Modus",
+        "state": {
+          "heating": "Heizen",
+          "ventilation": "Lüften",
+          "cooling": "Kühlen"
+        }
+      },
+      "fan": {
+        "name": "Lüfter",
+        "state": {
+          "automatic": "Automatisch",
+          "quiet": "Leise",
+          "boost": "Boost",
+          "0": "0",
+          "1": "1",
+          "2": "2",
+          "3": "3",
+          "4": "4"
+        }
+      }
+    },
+    "sensor": {
+      "decision": {
+        "name": "Entscheidung",
+        "state": {
+          "disabled": "Aus",
+          "heating": "Heizen",
+          "cooling": "Kühlen",
+          "ventilation": "Lüften",
+          "window_open": "Fenster offen",
+          "holiday": "Urlaub",
+          "night": "Nacht",
+          "normal": "Normal",
+          "idle": "Ruhend"
+        }
+      }
+    },
+    "binary_sensor": {
+      "degraded": {
+        "name": "Eingeschränkt"
+      }
+    }
+  },
+  "issues": {
+    "operation_mode": {
+      "title": "Die Anlage steht nicht auf Handbetrieb",
+      "description": "Die Betriebsart liest {mode}. Dieser Controller setzt Luftstufe, Freigaben und alle Sollwerte selbst, und das Saisonprogramm der Anlage arbeitet dagegen. Stelle die Betriebsart zurück auf Handbetrieb."
+    },
+    "input_unavailable": {
+      "title": "Eine Eingabe lässt sich nicht lesen",
+      "description": "Diese sind konfiguriert und melden seit einer Weile nichts: {inputs}. Jede fällt auf einen dokumentierten sicheren Wert zurück, den die Entscheidungs-Sensoren nennen, aber die Entscheidung wird dadurch schlechter."
+    },
+    "stuck_write": {
+      "title": "Ein Wert wird nicht übernommen",
+      "description": "Diese wurden mehrfach geschrieben und lesen sich trotzdem nicht zurück: {writes}. Der Write wird bei jeder Auswertung wiederholt, das liegt also am Gerät oder an der Verbindung und nicht am Controller."
+    }
+  }
+}
