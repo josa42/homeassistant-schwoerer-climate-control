@@ -199,25 +199,35 @@ class ClimateControlCoordinator(DataUpdateCoordinator[SystemDecision]):
     ############################################################################
     # Controls
 
+    def _act_now(self) -> None:
+        """Evaluate at once, without the debounce the sensors go through.
+
+        A hand on a control is not a contact chattering. Thirty seconds of
+        nothing after switching the controller off is indistinguishable from it
+        being broken, and that switch is the one reached for in a hurry. The task
+        is not awaited, so toggling a switch does not wait out a write bundle.
+        """
+        self.hass.async_create_task(self.async_refresh())
+
     async def async_set_enabled(self, enabled: bool) -> None:
         self.enabled = enabled
-        await self.async_request_refresh()
+        self._act_now()
 
     async def async_set_mode(self, mode: Mode) -> None:
         self.mode = mode
-        await self.async_request_refresh()
+        self._act_now()
 
     async def async_set_holiday(self, holiday: bool) -> None:
         self.holiday = holiday
-        await self.async_request_refresh()
+        self._act_now()
 
     async def async_set_fan_request(self, request: FanMode | int) -> None:
         self.fan_request = request
-        await self.async_request_refresh()
+        self._act_now()
 
     async def async_set_dry_run(self, dry_run: bool) -> None:
         self.dry_run = dry_run
-        await self.async_request_refresh()
+        self._act_now()
 
     ############################################################################
     # Reading
@@ -655,6 +665,12 @@ class ClimateControlCoordinator(DataUpdateCoordinator[SystemDecision]):
                 # Spaced, so a transition that touches six rooms does not arrive
                 # as a burst on a bus that is also being polled.
                 await asyncio.sleep(WRITE_SPACING)
+            if not self.enabled or self.dry_run:
+                # Switched off part way through. A bundle takes seconds to go
+                # out, and the switch is meant to stop things now rather than
+                # after the rest of it has been sent.
+                _LOGGER.debug("Stopping a bundle part way through")
+                return
             _LOGGER.debug(
                 "Setting %s to %s on %s", write.label, write.expect, write.entity_id
             )
@@ -704,6 +720,9 @@ class ClimateControlCoordinator(DataUpdateCoordinator[SystemDecision]):
                 CONF_HEAT_RELEASE_SWITCH,
                 CONF_COOL_RELEASE_SWITCH,
                 CONF_COMPRESSOR_SENSOR,
+                # Watched so that leaving manual mode is noticed at once rather
+                # than at the next tick, which is what the repair is for.
+                CONF_OPERATION_MODE_SELECT,
             )
         ]
         for room in self.rooms.values():

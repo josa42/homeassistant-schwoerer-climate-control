@@ -297,3 +297,39 @@ async def test_a_window_is_acted_on_a_minute_after_it_opens(
     setpoints = [call for call in calls if call.service == "set_temperature"]
     assert setpoints, "the window should have been acted on by now"
     assert setpoints[-1].data["temperature"] == 12.0
+
+
+async def test_a_control_acts_at_once_rather_than_after_the_debounce(
+    hass: HomeAssistant, start
+) -> None:
+    # Sensor changes are debounced for half a minute. A hand on a control is not
+    # a contact chattering, and the active switch is reached for in a hurry.
+    coordinator, calls = await start(fan="4")
+
+    await coordinator.async_set_mode(Mode.HEATING)
+    await hass.async_block_till_done()
+
+    assert calls, "no timer was fired, so this is the control acting by itself"
+
+
+async def test_switching_off_stops_a_bundle_part_way_through(
+    hass: HomeAssistant, start, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A bundle takes seconds to go out. Switching off is meant to stop things
+    # now, not after the rest of it has been sent.
+    monkeypatch.setattr(
+        "custom_components.schwoerer_climate_control.coordinator.WRITE_SPACING", 0.01
+    )
+    coordinator, calls = await start(fan="4", heat="on", target=14.0)
+
+    async def off_after_the_first(call) -> None:
+        calls.append(call)
+        coordinator.enabled = False
+
+    for domain, service in (("select", "select_option"), ("switch", "turn_off")):
+        hass.services.async_register(domain, service, off_after_the_first)
+
+    await coordinator.async_set_mode(Mode.HEATING)
+    await hass.async_block_till_done()
+
+    assert len(calls) == 1, "the rest of the bundle was dropped"
