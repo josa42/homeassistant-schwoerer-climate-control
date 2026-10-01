@@ -89,6 +89,7 @@ else
 fi
 
 MANIFEST_FILE="custom_components/schwoerer_climate_control/manifest.json"
+INIT_FILE="custom_components/schwoerer_climate_control/__init__.py"
 if [ ! -f "$MANIFEST_FILE" ]; then
     print_error "Manifest file not found: $MANIFEST_FILE"
     exit 1
@@ -99,7 +100,7 @@ restore_version_files() {
     local code=$?
     [ "$code" -eq 0 ] && return
     print_warn "Release failed, restoring version files..."
-    git checkout -- "$MANIFEST_FILE" "$CHANGELOG_FILE" 2>/dev/null || true
+    git checkout -- "$MANIFEST_FILE" "$INIT_FILE" "$CHANGELOG_FILE" 2>/dev/null || true
 }
 trap restore_version_files EXIT
 
@@ -117,6 +118,25 @@ if [ "$NEW_VERSION" != "$VERSION" ]; then
 fi
 print_info "manifest.json -> ${VERSION}"
 
+# The dashboard strategy is served with ?v=<version>; bump it too or browsers
+# keep running the copy they cached before the upgrade.
+print_info "Updating STRATEGY_VERSION in ${INIT_FILE}..."
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    sed -i '' "s/^STRATEGY_VERSION = \"[^\"]*\"/STRATEGY_VERSION = \"${VERSION}\"/" "$INIT_FILE"
+else
+    sed -i "s/^STRATEGY_VERSION = \"[^\"]*\"/STRATEGY_VERSION = \"${VERSION}\"/" "$INIT_FILE"
+fi
+
+# Verified like the manifest is: a silent no-op here ships a release whose
+# dashboard keeps serving the strategy browsers cached before the upgrade, which
+# looks like the new dashboard code simply not working.
+NEW_STRATEGY_VERSION=$(grep -o '^STRATEGY_VERSION = "[^"]*"' "$INIT_FILE" | cut -d'"' -f2)
+if [ "$NEW_STRATEGY_VERSION" != "$VERSION" ]; then
+    print_error "Failed to update STRATEGY_VERSION in ${INIT_FILE}"
+    exit 1
+fi
+print_info "${INIT_FILE} -> STRATEGY_VERSION ${VERSION}"
+
 RELEASE_DATE=$(date +%Y-%m-%d)
 print_info "Dating the Unreleased section in ${CHANGELOG_FILE}..."
 if [[ "$OSTYPE" == "darwin"* ]]; then
@@ -126,7 +146,7 @@ else
 fi
 print_info "${CHANGELOG_FILE} -> ## ${VERSION} - ${RELEASE_DATE}"
 
-git add "$MANIFEST_FILE" "$CHANGELOG_FILE"
+git add "$MANIFEST_FILE" "$INIT_FILE" "$CHANGELOG_FILE"
 # Releasing the version already in the manifest (the first release, say)
 # changes nothing, and an empty commit would abort the whole release.
 if git diff --cached --quiet; then

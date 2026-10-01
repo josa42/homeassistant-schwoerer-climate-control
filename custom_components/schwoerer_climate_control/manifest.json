@@ -2,6 +2,8 @@
   "domain": "schwoerer_climate_control",
   "name": "Schwörer Climate Control",
   "after_dependencies": [
+    "frontend",
+    "http",
     "logbook",
     "schwoerer_lueftung",
     "weather"

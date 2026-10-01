@@ -150,6 +150,37 @@ starting or stopping. A fan level is not.
 
 <br><br>
 
+## Dashboard
+
+The integration ships a dashboard strategy that builds the whole dashboard from
+the entity registry, so a room added later appears on its own.
+
+Create a new dashboard, open its raw configuration editor and put in:
+
+```yaml
+strategy:
+  type: custom:schwoerer-climate-control
+```
+
+You get an overview with the controls and the current decision, and a debug view
+laying out the decision behind the unit and behind every room: the sentence, the
+conditions with their outcome, the readings with whether they are reporting, and
+every setting with the level it came from. To place just one of them inside a
+dashboard you already have, use it as a view strategy instead:
+
+```yaml
+views:
+  - strategy:
+      type: custom:schwoerer-climate-control
+      view: debug
+```
+
+It is built from Home Assistant's own cards, so it installs no custom card and
+stays out of the way of
+[schwoerer-lueftung-cards](https://github.com/josa42/homeassistant-schwoerer-lueftung-cards).
+
+<br><br>
+
 ## The bypass
 
 The bypass damper cannot be commanded. There is no write register for it on any

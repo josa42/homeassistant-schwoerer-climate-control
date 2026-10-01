@@ -72,3 +72,34 @@ def test_every_mode_and_intent_can_be_shown(language: str) -> None:
 def test_every_actuator_kind_can_be_chosen(language: str) -> None:
     options = load(f"translations/{language}.json")["selector"]["actuator"]["options"]
     assert set(options) == {kind.value for kind in ActuatorKind}
+
+
+def schema_keys(schema: Any) -> set[str]:
+    """Every field name a form will ask for."""
+    return {str(marker) for marker in schema.schema}
+
+
+@pytest.mark.parametrize("language", LANGUAGES)
+def test_every_form_field_has_a_label(language: str) -> None:
+    # A missing label does not fail anywhere: the form shows the raw key, and a
+    # dialog quietly turns into a list of identifiers.
+    from custom_components.schwoerer_climate_control.config_flow import (
+        room_schema,
+        thresholds_schema,
+        unit_schema,
+    )
+
+    data = load(f"translations/{language}.json")
+    forms = (
+        (unit_schema({}), data["config"]["step"]["user"]["data"]),
+        (unit_schema({}), data["options"]["step"]["entities"]["data"]),
+        (thresholds_schema({}), data["options"]["step"]["thresholds"]["data"]),
+        (room_schema({}), data["config_subentries"]["room"]["step"]["user"]["data"]),
+        (
+            room_schema({}),
+            data["config_subentries"]["room"]["step"]["reconfigure"]["data"],
+        ),
+    )
+    for schema, labels in forms:
+        missing = schema_keys(schema) - set(labels)
+        assert not missing, f"no label for {sorted(missing)}"
