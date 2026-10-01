@@ -1,287 +1,346 @@
 # Design: Schwörer Climate Control
 
-Dieses Dokument hält die Entscheidungen fest, aus denen der Nachfolger von
-`schwoerer_wgt_controller` gebaut wird, und die Begründungen dazu. Es ist die
-Antwort auf die Frage "warum eigentlich so", die in sechs Monaten genauso wichtig
-ist wie "warum ist der Zusatzheizer an".
+This document records the decisions this integration is built from, and the
+reasoning behind them. It is the answer to "why is it built this way", which in
+six months is as hard to reconstruct as "why is the auxiliary heater on".
 
-Repo: `homeassistant-schwoerer-climate-control`, Domain `schwoerer_climate_control`.
+Repository `homeassistant-schwoerer-climate-control`, domain
+`schwoerer_climate_control`.
 
-## Warum v1 ersetzt wird
+## Why v1 is being replaced
 
-Die Symptome waren, dass geschriebene Werte nicht ankamen. Die Ursache liegt im
-Schreibpfad, nicht in der Logik.
+The symptom was that written values did not arrive. The cause is in the write
+path, not in the logic.
 
-`schwoerer_lueftung` schreibt ein Feld und löst danach sofort einen vollständigen
-Geräte-Poll aus (`coordinator.py`, `async_write`). v1 schrieb pro Zyklus rund 15
-Felder: sechs Solltemperaturen, sechs HVAC-Modi, Luftstufe und zwei Schalter.
-Jeder dieser Writes zog einen Poll über dieselbe Modbus-Verbindung hinter sich
-her. Zusätzlich wertete v1 nicht nur alle 15 Minuten aus, sondern bei jeder
-Zustandsänderung jedes beobachteten Fenster-, Feuchte- und CO₂-Sensors, und jede
-Auswertung schrieb alle Werte erneut, ohne zu prüfen, ob sie sich geändert hatten.
+`schwoerer_lueftung` writes one field and then triggers a full device poll
+(`coordinator.py`, `async_write`). v1 wrote around 15 fields per evaluation: six
+room setpoints, six HVAC modes, the fan level and two switches. Each of those
+writes dragged a poll over the same Modbus connection behind it. On top of that,
+v1 did not only evaluate every 15 minutes but on every state change of every
+window, humidity and CO₂ sensor it watched, and every evaluation wrote all values
+again without checking whether they had changed.
 
-Zwei weitere Defekte aus v1, die unabhängig davon behoben werden:
+Two further defects from v1, fixed independently of that:
 
-`DEFAULT_HEAT_PUMP_CHANGE_LOCKOUT_MINUTES = 30` war in `const.py` definiert und
-wurde nirgends benutzt. Die handgeschriebene Automation `automation.heizung`
-implementiert diese Sperre, v1 hat sie verloren. Die Freigabe der Wärmepumpe
-konnte also an der 16-Grad-Schwelle beliebig oft kippen.
+`DEFAULT_HEAT_PUMP_CHANGE_LOCKOUT_MINUTES = 30` was defined in `const.py` and
+used nowhere. The hand-written `automation.heizung` implements that lockout and
+v1 lost it, so the heat pump release could flip as often as the outdoor
+temperature crossed the threshold.
 
-Es gab keine Hysterese. `outdoor_temp < threshold` entscheidet bei einem Wert, der
-um die Schwelle pendelt, bei jeder Auswertung neu.
+There was no hysteresis at all. `outdoor_temp < threshold` decides afresh on
+every evaluation when the reading sits near the threshold.
 
-## Umfang
+## Scope
 
-Die Integration steuert eine Schwörer WGT über die Entities von
-`schwoerer_lueftung` und kann zusätzlich Räume mitversorgen, die die WGT nicht
-heizt. Sie ist bewusst herstellerspezifisch: zentrale Luftstufe für alle Räume,
-Wärmepumpenfreigabe mit Kompressorschutz, Zusatzheizer pro Raum über `hvac_mode`,
-Betriebsart auf `manual`, Bypass nur lesbar. Keines dieser Konzepte gibt es in
-einer generischen Klimasteuerung.
+The integration drives a Schwörer WGT through the entities of
+`schwoerer_lueftung`, and can additionally serve rooms the WGT does not heat.
 
-Wiederverwendbar wird sie über die Schichtung, nicht über den Namen. Die Engine
-ist herstellerneutral und ohne Home-Assistant-Import, die Gerätekenntnis steckt in
-Adaptern. Eine Klimaanlage ist später ein Adapter, kein Umbau.
+It is deliberately vendor specific. One fan level for all rooms, a heat pump
+release with compressor protection, auxiliary heat per room through `hvac_mode`,
+an operating mode that has to sit on `manual`, and a bypass that can only be
+read. None of these concepts exist in a generic climate controller.
 
-## Architektur
+Reuse comes from the layering, not from the name. The engine is vendor neutral
+and free of Home Assistant imports, and the device knowledge sits in adapters. An
+air conditioner is a later adapter rather than a rewrite.
 
-| Teil | Aufgabe |
+## Architecture
+
+| Part | Responsibility |
 | --- | --- |
-| `engine.py` | Reine Funktion von (Inputs, Config, Zeit) auf eine Entscheidung. Kein HA-Import, kein Schreiben. |
-| `models.py` | `Decision`, `Gate`, `EffectiveConfig`, `Setting`. Jede Einstellung trägt ihren Wert und ihre Herkunft. |
-| `adapters/schwoerer.py` | Kennt Luftstufe, Wärmepumpenfreigabe, Zusatzheizer, Heiz-Kühlfunktion, Stoßlüftung. |
-| `adapters/generic.py` | Kennt nur eine `climate`-Entity: Solltemperatur und heizen oder aus. |
-| `coordinator.py` | Auswertung takten, Diffs bilden, Writes bündeln, Rate-Cap, Entscheidungen veröffentlichen. |
+| `engine.py` | Pure function of inputs, config and time, returning a decision. No HA import, no writing. |
+| `models.py` | `Decision`, `Gate`, `EffectiveConfig`, `Setting`. Every setting carries its value and its origin. |
+| `adapters/schwoerer.py` | Knows the fan level, heat pump release, auxiliary heat, heating/cooling function and shock ventilation. |
+| `adapters/generic.py` | Knows one `climate` entity: a target temperature and heat or off. |
+| `coordinator.py` | Schedules evaluations, diffs, bundles writes, enforces the rate cap, publishes decisions. |
 
-Das Muster ist aus `cover-control` übernommen, wo die Trennung zwischen reiner
-Geometrie und Home-Assistant-Anbindung sich bewährt hat.
+The pattern is taken from `cover-control`, where separating pure geometry from the
+Home Assistant plumbing has held up well.
 
-## Schreibdisziplin
+## Write discipline
 
-Der Schutz gegen Modbus-Überlastung liegt auf zwei Schichten mit getrennter
-Verantwortung. Transportsicherheit gehört zu `schwoerer_lueftung`, weil dort die
-Verbindung liegt und weil jeder andere Schreiber davon profitiert, auch die UI und
-eigene Skripte. Absichtsdisziplin gehört in den Controller.
+Protection against overloading Modbus sits on two layers with separate
+responsibilities. Transport safety belongs to `schwoerer_lueftung`, because that
+is where the connection lives and because every other writer benefits, the UI and
+hand-written scripts included. Discipline about intent belongs to the controller.
 
-In `schwoerer_lueftung` (eigenes Repo, eigener Arbeitsschritt):
+In `schwoerer_lueftung` (separate repository, separate piece of work):
 
-| Maßnahme | Grund |
+| Measure | Reason |
 | --- | --- |
-| Serialisierte Write-Queue | Nie zwei Writes gleichzeitig auf einer Modbus-Verbindung. |
-| Mindestabstand zwischen Writes | Das Gerät braucht Zeit zwischen Registerzugriffen. |
-| Coalescing pro Feld | Von drei Writes auf dasselbe Register in einer Sekunde ist nur der letzte interessant. |
-| Readback-Verifikation mit Retry | Ein stillschweigend verworfener Write ist genau der Fehler, der v1 unbrauchbar machte. |
-| Kein Poll pro Write | Ein Poll nach dem Ende der Queue genügt. |
+| Serialized write queue | Never two writes at once on one Modbus connection. |
+| Minimum spacing between writes | The device needs time between register accesses. |
+| Coalescing per field | Of three writes to the same register within a second, only the last one matters. |
+| Readback verification with retry | A silently dropped write is precisely what made v1 unusable. |
+| No poll per write | One poll after the queue drains is enough. |
 
-Im Controller:
+In the controller:
 
-| Maßnahme | Grund |
+| Measure | Reason |
 | --- | --- |
-| Nur Diffs schreiben | Was schon stimmt, braucht keinen Write. |
-| Ein Bündel pro Entscheidung | Nicht pro Regel, nicht pro Raum. |
-| Debounce 30 s auf Zustandsänderungen | Ein Fensterkontakt, der prellt, löst eine Auswertung aus, nicht acht. |
-| Mindestens 60 s zwischen zwei Bündeln | Obergrenze für die Last, unabhängig davon wie viele Trigger feuern. |
-| Zusätzlich alle 15 Minuten | Damit Zeitgrenzen wie die Nachtabsenkung auch ohne Trigger greifen. |
+| Write diffs only | What already holds needs no write. |
+| One bundle per decision | Not per rule, not per room. |
+| 30 s debounce on state changes | A window contact that chatters causes one evaluation, not eight. |
+| At least 60 s between bundles | A ceiling on the load regardless of how many triggers fire. |
+| Additionally every 15 minutes | So time boundaries such as the night setback take effect without a trigger. |
 
-## Bedienmodell
+## Controls
 
-Alles Zentrale hängt am Hub-Gerät. Pro Raum gibt es nur den Entscheidungs-Sensor,
-weil die Luftstufe ohnehin zentral ist und punktuelle Eingriffe über die zentralen
-Regler laufen.
+Everything central hangs off the hub device. A room has only its decision sensor,
+because the fan level is central anyway and selective intervention goes through
+the central controls.
 
-| Entity | Werte | Bedeutung |
+| Entity | Values | Meaning |
 | --- | --- | --- |
-| `switch` Aktiv | an, aus | Aus schreibt der Controller keinen einzigen Wert mehr. Die Anlage läuft mit ihren letzten Werten weiter, die Entscheidungs-Sensoren zeigen weiter, was er täte. |
-| `switch` Dry-Run | an, aus | Alles wird ausgewertet und veröffentlicht, nichts geschrieben. Beim ersten Setup an. |
-| `select` Modus | Heizen, Lüften, Kühlen | Welche Energierichtung erlaubt ist. Nicht, was gerade läuft. |
-| `switch` Urlaub | an, aus | Modifikator auf den Modus, keine eigene Betriebsart. |
-| `select` Lüfter | automatic, quiet, boost, 0 bis 4 | Modi und feste Stufen in einem Select, so wie das Geräte-Select es auch aufbaut. |
-| `sensor` Entscheidung (Hub) | Absicht | Zentrale Entscheidung mit allen Inputs, Gates und Einstellungen als Attribute. |
-| `sensor` Entscheidung (pro Raum) | Absicht | Dasselbe für einen Raum. |
-| `binary_sensor` Eingeschränkt | an, aus | Mindestens eine konfigurierte Eingabe fehlt. |
+| `switch` Active | on, off | Off writes nothing at all. The unit keeps running on its last values and the decision sensors keep showing what it would do. |
+| `switch` Dry run | on, off | Everything is evaluated and published, nothing is written. On for a first install. |
+| `select` Mode | heating, ventilation, cooling | Which direction of energy is allowed, not what is currently running. |
+| `switch` Holiday | on, off | A modifier on the mode rather than a mode of its own. |
+| `select` Fan | automatic, quiet, boost, 0 to 4 | Modes and fixed stages in one select, the way the device's own select is built. |
+| `sensor` Decision (hub) | intent | The central decision, with inputs, gates and settings as attributes. |
+| `sensor` Decision (per room) | intent | The same for one room. |
+| `binary_sensor` Degraded | on, off | At least one configured input is missing. |
 
-Die Betriebsart des Geräts bleibt auf `manual` und wird nur gelesen. Steht sie
-anders, meldet der Controller das als Repair und arbeitet nicht dagegen. Zwei
-Automatiken, die sich gegenseitig überschreiben, sind der Grund, warum "warum ist
-X an" unbeantwortbar wird.
+The device's `Betriebsart` stays on `manual` and is only read. If it reads
+anything else the controller raises a repair rather than fighting it. Two
+automations overwriting each other are the reason "why is X on" becomes
+unanswerable. Research in the `schwoerer_lueftung` repository
+(`docs/research/001-bypass-control.md`) confirms that `manual` costs nothing:
+over a week with more than a hundred damper transitions, `Betriebsart` gated
+none of them.
 
-## Modus als Energierichtung
+## Mode as a direction of energy
 
-Der Modus heißt nicht Sommer und Winter, sondern Heizen, Lüften und Kühlen. Das
-hat drei Konsequenzen, die alle gewollt sind.
+The mode is not named after the calendar. It is heating, ventilation or cooling,
+and that has three consequences, all of them wanted.
 
-Der Name sagt, welches Gate offen ist, statt einen Kalender zu behaupten. Sommer
-im April ist falsch, Lüften im April ist richtig.
+The name says which gate is open instead of asserting a season. Summer in April
+is wrong, ventilation in April is right.
 
-Er bildet `heiz_kuhlfunktion` eins zu eins ab, ein Register, das der Controller
-schreibt. Es gibt keine Übersetzungstabelle, die auseinanderlaufen kann.
+It maps one to one onto register 230, the heating/cooling function, which the
+controller writes. There is no translation table that can drift.
 
-Lüften ist ein sicherer Fallback. Weder heizen noch kühlen bedeutet, dass die
-Grundfunktion weiterläuft. Bei Sensorausfall oder Widerspruch fällt der Controller
-dorthin zurück, und das ist nie falsch, nur manchmal nicht optimal.
+Ventilation is a safe fallback. Neither heating nor cooling means the base
+function keeps running. On sensor failure or contradiction the controller falls
+back there, which is never wrong, only sometimes not optimal.
 
-Keine Regel verzweigt je über den Modus selbst. Jede Regel liest ihr eigenes Gate
-mit eigener Begründung, und der Modus ist nur eine Eingabe für dieses Gate. Eine
-spätere Automatik der Umschaltung ist damit ein Wechsel der Quelle und keine
-Änderung an der Logik. Dafür führt der Decision-Record schon jetzt die nötigen
-Daten mit: gleitender Mehrtages-Mittelwert der Außentemperatur, Prognose und
-Kühlpotenzial. Der Momentanwert allein taugt dafür nicht, `T10` stand Anfang
-Oktober bei 20.9 Grad.
+No rule ever branches on the mode itself. Each rule reads its own gate with its
+own reason, and the mode is one input to that gate. Automating the switch later is
+therefore a change of source and not a change to the logic. The decision record
+already carries what such an automation needs: a multi-day rolling mean of the
+outdoor temperature, the forecast and the cooling potential. The instantaneous
+reading alone will not do, since T10 read 20.9 °C in early October.
 
-## Auflösung von Einstellungen
+## Resolving settings
 
-Jede Einstellung wird in der Reihenfolge Raum, Hub, Default aufgelöst, mit
-absoluten Werten, nicht mit Offsets. Das gilt für Solltemperaturen, Zeiten,
-Schwellwerte und Flags gleichermaßen. Ein Offset komponiert schlecht: ob er auch
-auf den Urlaubswert und auf die Fenster-offen-Temperatur gehört, ist mal richtig
-und mal Unsinn, und die Antwort müsste hart verdrahtet werden.
+Every setting is resolved in the order room, hub, default, using absolute values
+rather than offsets. That holds for setpoints, times, thresholds and flags alike.
+An offset composes badly: whether it should also apply to the holiday value and to
+the window-open temperature is sometimes right and sometimes nonsense, and the
+answer would have to be hard-coded.
 
-Jede Entscheidung nennt für jede benutzte Einstellung den Wert und die Quelle.
-"Soll 18.5 Grad (Quelle Raum), Nachtbeginn 20:00 (Quelle Hub)" beantwortet die
-Frage, ohne zwei Konfigurationsdialoge zu vergleichen.
+Every decision names, for each setting it used, the value and the source. "Target
+18.5 °C (source room), night starts 20:00 (source hub)" answers the question
+without comparing two configuration dialogs.
 
-Zusatzheizer nachts aus ist ein Raum-Feld in demselben Mechanismus und kein
-Etagen-Konstrukt. Bei einem Haus, dessen Schlafräume zufällig das Obergeschoss
-sind, ergibt das dasselbe Verhalten, bleibt aber richtig, wenn es einmal nicht so
-ist.
+Auxiliary heat off at night is a room field in the same mechanism rather than a
+floor construct. In a house whose bedrooms happen to be the upper floor this
+produces the same behaviour, and it stays correct when that stops being true.
 
-## Räume
+## Rooms
 
-Ein Raum ist ein Name, eine Ist-Temperatur, null oder mehr Öffnungskontakte,
-optional Feuchte und CO₂, und genau ein Aktor: eine `climate`-Entity.
+A room is a name, a current temperature, zero or more opening contacts, optionally
+humidity and CO₂, and exactly one actuator: a `climate` entity.
 
-Für die WGT-Räume ist das das Raumthermostat, dessen `hvac_mode` den Zusatzheizer
-schaltet. Für Räume, die die WGT nicht heizt, ist es jede andere `climate`-Entity,
-also ein Thermostatventil oder ein `generic_thermostat` vor einem Relais.
+For the WGT rooms that is the room thermostat, whose `hvac_mode` switches the
+auxiliary heater. For rooms the WGT does not heat it is any other `climate`
+entity, so a radiator valve or a `generic_thermostat` in front of a relay.
 
-Der Controller regelt kein Relais selbst. Hysterese, Mindestlaufzeit und
-Mindestpause macht `generic_thermostat` seit Jahren richtig, und selbstgeschriebene
-sicherheitskritische Regelung ist genau die Klasse Code, die in v1 den Schaden
-angerichtet hat. Der Preis ist ein Helper pro Relais-Raum, von Hand angelegt.
+The controller does not regulate a relay itself. Hysteresis, minimum run time and
+minimum rest are things `generic_thermostat` has been getting right for years, and
+self-written safety-critical control is exactly the class of code that did the
+damage in v1. The price is one helper per relay room, created by hand.
 
-Null Öffnungskontakte ist ein gültiger Zustand. Nicht jeder Raum hat einen.
+Zero opening contacts is a valid state. Not every room has one.
 
-## Wärmepumpe
+## Heat pump
 
-Die Freigabe folgt der Außentemperatur mit Hysterese um die Schwelle, und sie wird
-nur geändert, wenn sie seit mindestens 30 Minuten stabil ist oder die Wärmepumpe
-gerade nicht läuft. Beides ist aus `automation.heizung` übernommen, wo es sich
-bewährt hat, und beides fehlte in v1.
+The release follows the outdoor temperature with hysteresis around the threshold,
+and it is only changed when it has been stable for at least 30 minutes or the heat
+pump is not currently running. Both are taken from `automation.heizung`, where
+they have proven themselves, and both were missing in v1.
 
-Im Modus Kühlen gilt dieselbe Sperre für die Kühlfreigabe. Der billigste Weg
-gewinnt: erst Nachtauskühlung über die Luftstufe, die Freigabe der Wärmepumpe erst,
-wenn das nicht reicht.
+In cooling mode the same lockout applies to the cooling release. The cheapest path
+wins: night cooling through the fan level first, and the heat pump release only
+when that is not enough.
 
-Der Bypass ist Register 123 und nur lesbar. Der Controller kann ihn nie stellen,
-also liest er ihn und erklärt ihn. Wenn bei Kühlbedarf der Bypass geschlossen
-bleibt, ist das eine Meldung, keine Aktion.
+## Cooling and the bypass
 
-## Luftstufe
+The bypass is register 123 and read only. There is no write register for it on any
+known firmware, and the damper is driven by the unit's own controller. What the
+controller here can reach are the inputs that decision is made from, which is as
+close as this interface gets. Measurements are in
+`docs/research/001-bypass-control.md` in the `schwoerer_lueftung` repository.
 
-Die Luftstufe ist zentral. Feuchte und CO₂ werden pro Raum gemessen, speisen aber
-eine einzige Entscheidung, die sagt, welcher Raum welche Stufe fordert.
+Three of those inputs are reachable, and two of them the controller writes anyway:
 
-Luftqualität gewinnt, auch nachts. Achtundsiebzig Prozent im Bad über acht Stunden
-sind ein Schimmelrisiko und teurer als eine Stufe Geräuschpegel. Wer das anders
-will, schaltet den Lüfter-Modus auf `quiet`, dann gilt eine konfigurierbare
-Obergrenze, und jede Entscheidung sagt, dass sie gedeckelt wurde. `boost` hebt
-umgekehrt an. Beide bleiben stehen, bis sie umgeschaltet werden. Eine Ablaufzeit
-kann später dazukommen.
-
-Räume mit offenem Fenster fordern nichts. Ihre Feuchte- und CO₂-Werte messen
-draußen.
-
-## Sensorausfall
-
-Ein Ausfall ist nie stumm und führt nie dazu, dass eine Regel klammheimlich
-entfällt. v1 machte überall `if not state: continue`, womit ein toter CO₂-Sensor
-gute Luft bedeutete und ein toter Fensterkontakt ein geschlossenes Fenster.
-
-| Eingabe | Bei Ausfall |
+| Input | How it is reached |
 | --- | --- |
-| Öffnungskontakt | Gilt als offen. Lieber nicht heizen als gegen ein offenes Fenster heizen. |
-| Außentemperatur | Letzter gültiger Wert bis zu einem Höchstalter, danach Rückfall auf Lüften. |
-| Ist-Temperatur eines Raums | Der Raum behält seine Solltemperatur, der Zusatzheizer bleibt aus. |
-| Feuchte, CO₂ | Die Regel entfällt für diesen Raum, sichtbar im Record. |
-| Prognose, PV | Die Verfeinerung entfällt, die Basisregel bleibt. |
+| Heating/cooling function must be Kühlen | Register 230, written by the mode. Leaving Kühlen closes the damper within seconds. |
+| Room setpoint below the room temperature | The room's target temperature. This is the cooling demand the unit looks for. |
+| Fan stage above 0 | Stage 0 closes the damper. Cooling therefore never asks for stage 0. |
 
-Dazu `binary_sensor` Eingeschränkt und ein Repair-Eintrag, wenn eine konfigurierte
-Eingabe länger als eine Schwelle fehlt. Jeder Input steht mit Wert, Alter und
-Gültigkeit im Decision-Record.
+This makes the cooling setpoint do double duty, and it is the same number either
+way. In cooling mode a room's target means "cool down to this", and a target below
+the current temperature is both the expression of that intent and the condition
+that opens the bypass. Nothing extra has to be written to steer the damper.
 
-## Transparenz
+Two limits cannot be reached. The unit gates the bypass with a lower limit on the
+outdoor temperature, measured at 10 °C over three independent occurrences, and no
+register for that parameter is identified, so it can be neither read nor changed.
+And which indoor temperature the outdoor temperature is compared against is
+undecided, with room 1 the likely candidate.
 
-Die Frage "warum ist der Zusatzheizer an" ist meistens eine Frage über die
-Vergangenheit, und die Antwort muss einen Neustart und acht Stunden überleben.
+The controller therefore treats the bypass as an observation. It reads register
+123, it knows the conditions, and it reports when the damper is closed while
+cooling is wanted. Reporting is the action.
 
-Der aktuelle Zustand steht in den Attributen des Entscheidungs-Sensors: die Inputs
-mit Alter und Gültigkeit, die Gates mit Ergebnis, die Einstellungen mit Quelle, und
-ein fertiger Satz. Die umfangreichen Attribute werden vom Recorder ausgeschlossen,
-weil sechs Räume alle 15 Minuten die Datenbank sonst zuschreiben.
+### The bypass path on this unit carries no air
 
-Die Historie steht im Logbuch. Jede Änderung einer Entscheidung erzeugt einen
-Eintrag mit dem fertigen Satz, pro Raum und für den Hub. Damit ist "warum war er um
-drei Uhr an" ein Blick ins Logbuch des Raums.
+This is the part that limits what cooling can achieve here, and it is a hardware
+finding rather than a software one.
 
-Dazu kommen ein Diagnostics-Download für den vollen Schnappschuss und eine
-Dashboard-Strategy mit Übersicht und Debug-View, wie in `cover-control`.
+Across two weeks of history there is no hour in which the supply air departed
+from full heat recovery. Restricted to hours with the fan running and at least
+5 K between outdoor and extract air, the recovery implied by
+`(T3 - T10) / (T5 - T10)` is 0.88 to 0.96 while register 123 reports open, and
+0.89 while it reports closed. There is no difference, including 36 consecutive
+hours reported open at a 12 K gradient and a night at 15 K. The owner reports that
+the flap is audible, which rules out a dead servo and a unit built without the
+option, and locates the fault in the bypass path rather than in the actuator or
+the register.
 
-Benachrichtigungen gehen an einen `notify`-Service und werden fünf Minuten
-gesammelt, damit eine Umschaltung, die sechs Räume betrifft, eine Nachricht ist
-und nicht sechs. Wechsel der Wärmepumpenfreigabe wird gemeldet, so wie es
-`automation.heizung` heute auch tut.
+Until that is found, night cooling on this unit cools nothing: air drawn in at
+night is returned to indoor temperature by the exchanger on its way through.
+Raising the fan level still exchanges air, which is worth having for humidity and
+CO₂, but it is not a cooling lever here.
 
-## Zusatzeingaben in v1
+Two things follow for the design. Cooling is built as specified, because the
+decision logic is correct and the fault is downstream of it. And the integration
+publishes the effectiveness it measures, so that a bypass that starts working is
+visible immediately and one that does not cannot be mistaken for a controller
+that is not trying.
 
-| Eingabe | Wirkung |
+## Fan level
+
+The fan level is central. Humidity and CO₂ are measured per room but feed a single
+decision, which names the room that is asking and the stage it asks for.
+
+Air quality wins, at night too. Seventy-eight percent in the bathroom over eight
+hours is a mould risk, and that is more expensive than a stage of noise. Anyone
+who wants it otherwise switches the fan mode to `quiet`, which applies a
+configurable ceiling and says in every decision that it capped the result.
+`boost` raises it the same way. Both hold until they are switched, and an
+expiry can be added later.
+
+Rooms with an open window ask for nothing. Their humidity and CO₂ readings are
+measuring outdoors.
+
+## Sensor failure
+
+A failure is never silent and never makes a rule quietly disappear. v1 did
+`if not state: continue` everywhere, which made a dead CO₂ sensor mean good air
+and a dead window contact mean a closed window.
+
+| Input | On failure |
 | --- | --- |
-| Wetterprognose | Tageshöchstwert statt Momentanwert für die Heizfreigabe, Auslöser für Nachtauskühlung im Modus Kühlen, später Eingang für die Automatik der Modusumschaltung. |
-| PV-Überschuss | Solltemperatur anheben oder Zusatzheizer freigeben, solange Überschuss anliegt. Die Begründung muss erklären, warum es 21.5 statt 20.0 Grad sind. |
-| Türkontakte | Gehen in dieselbe Fenster-offen-Logik ein, mehrere Kontakte pro Raum. |
+| Opening contact | Counts as open. Better not to heat than to heat against an open window. |
+| Outdoor temperature | Last valid value up to a maximum age, then fall back to ventilation. |
+| A room's current temperature | The room keeps its setpoint and the auxiliary heater stays off. |
+| Humidity, CO₂ | The rule drops out for that room, visibly in the record. |
+| Forecast, PV | The refinement drops out, the base rule stands. |
 
-Urlaub bleibt ein manueller Schalter. Wer ihn automatisieren will, tut das in Home
-Assistant, wie heute.
+Alongside that a `binary_sensor` Degraded, and a repair entry when a configured
+input has been missing for longer than a threshold. Every input appears in the
+decision record with its value, its age and its validity.
 
-## Bewusst anders entschieden
+## Transparency
 
-Der Controller gewinnt immer. Es gibt keine Erkennung manueller Eingriffe und
-keinen Übersteuerungs-Zustand, der hängenbleiben könnte. Am Raumthermostat zu
-drehen hat damit keine bleibende Wirkung, und das ist der Preis dafür, dass der
-Zustand des Controllers aus Konfiguration und Messwerten vollständig bestimmt ist.
+"Why is the auxiliary heater on" is usually a question about the past, and the
+answer has to survive a restart and eight hours.
 
-Es gibt keine Boost-Buttons und keine Enable-Switches pro Raum. Nur die zentralen
-Regler. Wer einen Raum dauerhaft anders will, ändert dessen Einstellung.
+The current state lives in the attributes of the decision sensor: the inputs with
+age and validity, the gates with their outcome, the settings with their source,
+and a finished sentence. The large attributes are excluded from the recorder,
+because six rooms every 15 minutes would otherwise fill the database.
 
-Modus und Urlaub sind zwei Achsen und keine flache Liste. Urlaub im Januar braucht
-Frostschutz und abgesenkte Solltemperaturen, Urlaub im Juli nichts davon. Als
-exklusiver vierter Modus müsste Urlaub die Jahreszeit trotzdem kennen, und diese
-versteckte Verzweigung ist genau der Ort, an dem Begründungen verloren gehen.
+The history lives in the logbook. Every change of a decision writes an entry with
+that finished sentence, per room and for the hub. "Why was it on at three in the
+morning" is then a look at the room's logbook.
 
-Der Name trägt den Hersteller. Ein generischer Name wäre ein Versprechen, das der
-Code nicht hält, und würde jede WGT-Eigenheit zu einem Sonderfall machen, den man
-irgendwann abstrahieren müsste. So ist dieselbe Eigenheit das erklärte Thema.
+On top of that a diagnostics download for the full snapshot, and a dashboard
+strategy with an overview and a debug view, as in `cover-control`.
 
-Keine Zeitplan-Helper pro Raum. Nachtbeginn und Nachtende laufen durch denselben
-Auflösungsmechanismus wie alles andere. Sechs Zeitpläne zu pflegen, deren
-Begründung auf fremde Entities verweist, ist teurer als zwei Zahlen pro Raum.
+Notifications go to one `notify` service and are gathered for five minutes, so a
+switch that affects six rooms is one message instead of six. A change of the heat
+pump release is reported, which is what `automation.heizung` does today.
 
-## Nicht in v1
+## Extra inputs in v1
 
-Automatik der Modusumschaltung. Die Datenquellen werden mitgeführt, die Umschaltung
-bleibt manuell. Die Umschaltung ist teuer, also braucht sie Totband und eine
-Verweildauer in Tagen, und das will beobachtet werden, bevor es automatisch läuft.
+| Input | Effect |
+| --- | --- |
+| Weather forecast | The day's maximum instead of the instantaneous reading for the heat pump release, the trigger for night cooling in cooling mode, and later an input to automating the mode. |
+| PV surplus | Raise setpoints or release auxiliary heat while a surplus is available. The reason has to explain why it is 21.5 rather than 20.0 °C. |
+| Door contacts | Fed into the same window-open logic, several contacts per room. |
 
-Anwesenheit und Kalender als Eingabe. Ein Handy im Flugmodus, das die Heizung
-absenkt, während jemand daheim ist, ist ein schlechter Tausch für einen Schalter,
-der funktioniert.
+Holiday stays a manual switch. Automating it is something Home Assistant can do,
+as it does today.
 
-Fehler- und Filtermeldungen der Anlage, Strompreis und CO₂-Intensität des Netzes,
-Adapter für Klimaanlagen.
+## Decided against
 
-## Offene Frage
+The controller always wins. There is no detection of manual intervention and no
+override state that could get stuck. Turning the room thermostat by hand therefore
+has no lasting effect, and that is the price of the controller's state being fully
+determined by its configuration and its readings.
 
-Öffnet der Bypass auch bei Betriebsart `manual`, oder braucht er `Sommer`? Davon
-hängt ab, ob Nachtauskühlung über die Luftstufe überhaupt wirkt. Solange das nicht
-geklärt ist, ermittelt der Controller es selbst: er beobachtet `bypass_state`
-gegen Außen- und Innentemperatur und meldet, wenn der Bypass bei Kühlbedarf
-geschlossen bleibt.
+There are no boost buttons and no per-room enable switches, only the central
+controls. A room that should permanently differ gets its setting changed.
+
+Mode and holiday are two axes rather than one flat list. A holiday in January
+needs frost protection and reduced setpoints, one in July needs neither. As an
+exclusive fourth mode, holiday would still have to know the season, and that
+hidden branch is where reasons go missing.
+
+The name carries the vendor. A generic name would be a promise the code does not
+keep, and it would turn every WGT peculiarity into a special case that ought to be
+abstracted away one day. This way the same peculiarity is the declared subject.
+
+No schedule helpers per room. Night start and night end run through the same
+resolution mechanism as everything else. Maintaining six schedules whose reasons
+point at foreign entities costs more than two numbers per room.
+
+## Not in v1
+
+Automating the mode switch. The data sources are carried, the switch stays manual.
+Switching is expensive, so it needs a dead band and a dwell time measured in days,
+and that wants watching before it runs on its own.
+
+Presence and calendar as inputs. A phone in flight mode that lowers the heating
+while somebody is at home is a poor trade for a switch that works.
+
+The unit's error and filter messages, electricity price and grid carbon intensity,
+an adapter for air conditioners.
+
+## Open questions
+
+Why the bypass channel carries no air. This is a hardware question and it caps
+what cooling can do on this unit, but it does not change the decision logic.
+
+Which indoor temperature the unit compares the outdoor temperature against.
+Room 1 is the likely candidate because the setpoint condition turned out to be
+room 1's, but that is an inference. It matters for how accurately the integration
+can predict the damper, not for what it writes.
+
+What the bypass does on the heating side. Register 123 reports a state 2 for
+"open for heating" that has never been observed, and every threshold measured so
+far comes from the cooling side.
