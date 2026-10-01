@@ -55,6 +55,7 @@ from .const import (
     RELEASE_LOCKOUT,
     TARGET_MAX,
     TARGET_MIN,
+    TARGET_RESOLUTION,
     FanMode,
     FanReason,
     HeatingCoolingFunction,
@@ -138,6 +139,23 @@ def _is_night(config: EffectiveConfig, now: datetime) -> bool:
 
 def _clamp(value: float, low: float, high: float) -> float:
     return max(low, min(high, value))
+
+
+def _quantize(value: float) -> float:
+    """Round a setpoint to the resolution the device stores it at.
+
+    What the device reports is always an exact tenth, because it is a register
+    divided by ten. A sum computed here is not: adding a boost to a configured
+    setpoint lands on an inexact tenth for about one in five combinations across
+    the configurable range, 10.1 plus 0.2 giving 10.299999999999999 among them.
+    A writer that compares the two and writes when they differ would write that
+    register on every evaluation for as long as the condition held.
+
+    None of the pairs a heating setpoint and a plausible boost produce actually
+    hit it today. This is here so that holds for every input rather than for the
+    ones that happen to be exact.
+    """
+    return round(value / TARGET_RESOLUTION) * TARGET_RESOLUTION
 
 
 def _window_open(contacts: tuple[Reading, ...]) -> tuple[bool, list[str]]:
@@ -444,7 +462,9 @@ def _room_decision(
             # number and means it again the moment heating is allowed.
             intent = RoomIntent.IDLE
 
-    target = _clamp(target, TARGET_MIN, TARGET_MAX)
+    # Rounded to what the device can store, so that the value the engine means
+    # and the value it will read back are the same number.
+    target = _quantize(_clamp(target, TARGET_MIN, TARGET_MAX))
 
     auxiliary: bool | None = None
     if room.has_auxiliary_heat:

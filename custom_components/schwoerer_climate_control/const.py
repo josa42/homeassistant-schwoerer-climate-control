@@ -196,6 +196,11 @@ CONF_PV_TARGET_BOOST = "pv_target_boost"
 TARGET_MIN = 10.0
 TARGET_MAX = 30.0
 
+#: The resolution the device stores a room setpoint at (register 400 is scaled
+#: by 0.1). The engine rounds to it so that the value it emits is exactly the
+#: value the device will report back.
+TARGET_RESOLUTION = 0.1
+
 FAN_MIN = 0
 FAN_MAX = 4
 

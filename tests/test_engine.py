@@ -473,6 +473,21 @@ def test_pv_surplus_raises_the_setpoint_only_once_it_has_held() -> None:
     assert decision.rooms[0].reason is RoomReason.PV_SURPLUS
 
 
+def test_a_boosted_setpoint_is_a_number_the_device_can_store() -> None:
+    # 10.1 + 0.2 is 10.299999999999999 in binary floating point, while the
+    # device reports an exact 10.3 because it reports a register divided by ten.
+    # Unrounded, the two differ for as long as the surplus holds, and a writer
+    # that diffs would write that register on every evaluation.
+    inputs = given(
+        pv_power=read(3000.0), rooms=(a_room(config={CONF_TARGET_NORMAL: 10.1}),)
+    )
+    _, state = run(inputs, {"pv_target_boost": 0.2})
+    later = replace(inputs, now=NOON + timedelta(minutes=25))
+    target = run(later, {"pv_target_boost": 0.2}, state=state)[0].rooms[0].target_temperature
+    assert target == 10.3
+    assert repr(target) == "10.3"
+
+
 def test_pv_surplus_is_not_stored_in_a_room_with_an_open_window() -> None:
     inputs = given(pv_power=read(3000.0), rooms=(a_room(contacts=(read(True),)),))
     _, state = run(inputs)
