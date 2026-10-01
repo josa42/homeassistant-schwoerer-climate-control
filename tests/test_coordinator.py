@@ -230,3 +230,38 @@ async def test_the_operating_mode_is_read_not_written(
 
     assert coordinator.operation_mode == mode
     assert OPERATION_MODE not in {call.data["entity_id"] for call in calls}
+
+
+async def test_the_recovery_sensor_only_exists_when_it_can_say_something(
+    hass: HomeAssistant, entry, unit, setup_entry
+) -> None:
+    unit()
+    await setup_entry(entry)
+    assert hass.states.get("sensor.schworer_climate_control_heat_recovery") is None
+
+
+async def test_the_recovery_sensor_reports_a_damper_that_moves_no_air(
+    hass: HomeAssistant, entry, unit, setup_entry
+) -> None:
+    from .conftest import HUB_DATA
+
+    hass.config_entries.async_update_entry(
+        entry,
+        data={
+            **HUB_DATA,
+            "supply_temperature_sensor": "sensor.t3",
+            "extract_temperature_sensor": "sensor.t5",
+            "bypass_sensor": "sensor.bypass",
+        },
+    )
+    unit(outdoor="7.0")
+    hass.states.async_set("sensor.t3", "21.0")
+    hass.states.async_set("sensor.t5", "22.0")
+    hass.states.async_set("sensor.bypass", "open_cooling")
+    await setup_entry(entry)
+
+    state = hass.states.get("sensor.schworer_climate_control_heat_recovery")
+    assert state is not None
+    assert float(state.state) == pytest.approx(93.3, abs=0.1)
+    assert state.attributes["bypass_open"] is True
+    assert state.attributes["bypass_effective"] is False, "open, and recovering anyway"

@@ -19,33 +19,157 @@ what the fan level should be. Rooms the WGT does not heat can join in through an
 > controller. Use it as a starting point, not as a product.
 
 > [!NOTE]
-> Under construction. Nothing is released yet, and the integration does not do
-> anything useful at this point. The decisions it is being built from, and the
-> reasoning behind them, are written down in [docs/design.md](docs/design.md).
+> Nothing is released yet. The decisions it is built from, and the reasoning
+> behind them, are written down in [docs/design.md](docs/design.md).
 
 <br><br>
 
-## What it will do
+## Installation
 
-Every evaluation produces one decision per room plus one for the system, and each
-decision carries the inputs it read (with their age), the conditions it applied,
-the settings it used and where each of those came from. Changes are written to the
-logbook as finished sentences, so the answer to "why was the auxiliary heater on
-at three in the morning" survives a restart.
-
-Three operating modes say which direction of energy is allowed: heating,
-ventilation only, or cooling. Holiday is a modifier on top of that rather than a
-fourth mode, because a holiday in January still needs frost protection and one in
-July does not.
-
-<br><br>
-
-## Requirements
+### Requirements
 
 - Home Assistant **2026.9.0** or newer
 - The [schwoerer_lueftung](https://github.com/josa42/homeassistant-schwoerer-lueftung)
   integration, set up and reporting
 - A Schwörer WGT. A WRT has nothing to heat with, so most of this does not apply.
+
+<br><br>
+
+## Configuration
+
+1. Go to **Settings** → **Devices & Services**
+2. Click **+ Add Integration** and search for "Schwörer Climate Control"
+3. Confirm the unit's entities. They are discovered, so this is normally a matter
+   of pressing submit.
+4. On the integration page, choose **Add a room** once per room. Each room gets
+   its own device.
+
+Shared settings live on the hub and every room inherits them. Any of them can be
+overridden per room, and each decision records both the value it used and which
+level it came from.
+
+A room is a name, a thermostat, and whatever measures it. For a room of the unit
+the thermostat is its own `climate` entity, whose hvac mode is the auxiliary
+heater. For a room the unit does not heat it is any other `climate` entity: a
+radiator valve, or a `generic_thermostat` in front of a relay. Hysteresis and
+minimum run times belong to that thermostat, which in the case of a
+`generic_thermostat` already solves them.
+
+### The unit stays in manual
+
+The controller sets the fan level, both releases and every setpoint itself. The
+unit's own seasonal programme would work against that, so the operating mode has
+to stay on manual. It is read and never written, and a repair is raised if it
+reads anything else.
+
+<br><br>
+
+## How it decides
+
+The mode says which direction of energy is allowed, and it is named after that
+rather than after the season:
+
+| Mode | What it allows |
+| --- | --- |
+| Heating | The heat pump may be released, the auxiliary heaters may run |
+| Ventilation | Neither. The base function keeps running |
+| Cooling | Cooling may be released, night air may be used |
+
+Holiday is a modifier on top, not a fourth mode, because a holiday in January
+still needs frost protection and reduced setpoints while one in July needs
+neither.
+
+Below the frost limit, heating happens whatever the mode says. That also holds
+when the outdoor reading has gone missing, which is exactly when a freezing house
+most needs it.
+
+Air quality wins on the fan: humidity or CO₂ in any room raises the level, at
+night too. The fan select caps or raises that with `quiet` and `boost`, and a
+fixed stage overrides everything.
+
+<br><br>
+
+## Writing as little as possible
+
+Nothing is written unless it differs from what the device reports. In a steady
+state that means no Modbus traffic at all, and what is left are real transitions.
+A bundle is paced rather than sent at once, and no bundle goes out within a minute
+of the last one.
+
+Comparing against the device rather than against a memory of what was sent has two
+consequences worth knowing. A write that does not arrive is attempted again on the
+next evaluation without anything extra being built. And one that never arrives is
+counted, and raises a repair naming the register.
+
+A value the device is not currently reporting is not a difference. After a restart
+or a failed poll the current value is unknown, so nothing is written, which is
+what stops every register being rewritten whenever Home Assistant starts.
+
+**Dry run** decides and publishes everything and sends nothing. It is on for a
+fresh install, so the decisions can be watched for a few days before anything
+reaches the unit.
+
+<br><br>
+
+## Entities
+
+| Device | Entities |
+| --- | --- |
+| Central | Active, holiday and dry run switches, mode and fan selects, decision sensor, degraded indicator, heat recovery sensor |
+| Each room | Decision sensor |
+
+**Active** off means no register is written at all. The unit keeps running on its
+last values and the decision sensors keep showing what the controller would do,
+which makes it the switch to reach for while working out why it did something.
+
+The decision sensor carries the intent as its state, plus the sentence, the inputs
+with their age, the conditions with their outcome and every setting with the level
+it came from. Those last three are kept out of the recorder, because they change
+shape on every evaluation.
+
+<br><br>
+
+## Answering "why was it on at three in the morning"
+
+The sensors answer what is true now. The question is almost always about the past,
+so every change also writes a logbook entry carrying the same sentence, per room
+and for the unit. A setpoint drifting by a tenth is not a change and does not
+appear.
+
+The **diagnostics** download has the full trace, plus the writes the controller
+would send right now and whether each is needed, which is the answer to "it
+decided that, so why has nothing happened".
+
+Three things raise a repair: the unit left manual mode, a configured input has
+been unreadable for an hour, and a register will not take its value. An input that
+misses a single poll is not a repair.
+
+Notifications go to one notify service and gather for five minutes. A release
+turning over is worth a message, because it is the expensive thing in the house
+starting or stopping. A fan level is not.
+
+<br><br>
+
+## The bypass
+
+The bypass damper cannot be commanded. There is no write register for it on any
+known firmware, and the unit's own controller drives it. What can be reached are
+the conditions it decides from, and two of those the controller writes anyway: the
+heating and cooling function has to read cooling for the damper to open at all,
+and a room setpoint below the room temperature is the cooling demand it looks for.
+Stage 0 shuts it, so cooling never asks for stage 0.
+
+On the unit this was written for, the damper moves and the air does not. Supply air
+shows full heat recovery whether the register reports open or closed, which is a
+fault in the bypass path rather than in the actuator. Night cooling therefore
+cools nothing there until that is found.
+
+That is why the integration publishes the recovery it measures rather than
+assuming the lever works. A bypass that starts working shows up at once, and one
+that does not cannot be mistaken for a controller that is not trying. The
+measurements are in
+[docs/research/001-bypass-control.md](https://github.com/josa42/homeassistant-schwoerer-lueftung/blob/main/docs/research/001-bypass-control.md)
+in the ventilation repository.
 
 <br><br>
 
@@ -65,8 +189,8 @@ make dev-down    # stop it again
 integration is live in a throwaway Home Assistant without touching your real
 instance.
 
-The decision engine is a pure function with no Home Assistant imports, so most of
-the behaviour is testable directly.
+The decision engine and the bypass measurement are pure functions with no Home
+Assistant imports, so most of the behaviour is testable directly.
 
 ### Releasing
 
