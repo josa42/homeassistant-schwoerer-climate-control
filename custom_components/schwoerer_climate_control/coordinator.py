@@ -24,9 +24,11 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
 
+import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry, ConfigSubentry
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import Event, EventStateChangedData, HomeAssistant, callback
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import (
     device_registry as dr,
 )
@@ -524,15 +526,27 @@ class ClimateControlCoordinator(DataUpdateCoordinator[SystemDecision]):
     def _flush_notifications(self, _now: datetime) -> None:
         self._notify_scheduled = False
         lines, self._pending = self._pending, []
-        service = self.hub_config.get(CONF_NOTIFY_SERVICE)
-        if not lines or not service or "." not in service:
+        target = self.hub_config.get(CONF_NOTIFY_SERVICE)
+        if not lines or not target or "." not in target:
             return
-        domain, _, name = service.partition(".")
-        self.hass.async_create_task(
-            self.hass.services.async_call(
-                domain, name, {"message": "\n".join(lines)}, blocking=False
-            )
-        )
+        self.hass.async_create_task(self._send_notification(target, "\n".join(lines)))
+
+    async def _send_notification(self, target: str, message: str) -> None:
+        """Send to a notify entity, or to a legacy notify service of that name.
+
+        Entities are what the setup form offers. A legacy service such as
+        notify.mobile_app_phone is still honoured, so an entry set up before the
+        form changed keeps working.
+        """
+        domain, _, name = target.partition(".")
+        if self.hass.services.has_service(domain, name):
+            call = (domain, name, {"message": message})
+        else:
+            call = ("notify", "send_message", {"entity_id": target, "message": message})
+        try:
+            await self.hass.services.async_call(*call, blocking=True)
+        except (HomeAssistantError, vol.Invalid) as err:
+            _LOGGER.warning("Could not send notification to %s: %s", target, err)
 
     ############################################################################
     # Repairs

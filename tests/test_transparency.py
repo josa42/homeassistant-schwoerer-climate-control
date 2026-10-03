@@ -175,6 +175,52 @@ async def test_a_release_change_is_notified_once_the_window_closes(
     assert "Heating released" in sent[0].data["message"]
 
 
+async def test_a_notify_entity_is_sent_to_through_send_message(
+    hass: HomeAssistant, entry, unit, setup_entry
+) -> None:
+    hass.config_entries.async_update_entry(
+        entry, data={**HUB_DATA, "notify_service": "notify.phone"}
+    )
+    sent: list = []
+
+    async def record(call) -> None:
+        sent.append(call)
+
+    hass.services.async_register("notify", "send_message", record)
+
+    unit()
+    coordinator = await setup_entry(entry)
+    await coordinator.async_set_mode(Mode.HEATING)
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(minutes=6))
+    await hass.async_block_till_done()
+
+    assert len(sent) == 1
+    assert sent[0].data["entity_id"] == "notify.phone"
+    assert "Heating released" in sent[0].data["message"]
+
+
+async def test_a_notification_that_cannot_be_sent_is_logged(
+    hass: HomeAssistant, entry, unit, setup_entry, caplog
+) -> None:
+    hass.config_entries.async_update_entry(
+        entry, data={**HUB_DATA, "notify_service": "notify.phone"}
+    )
+
+    unit()
+    coordinator = await setup_entry(entry)
+    await coordinator.async_set_mode(Mode.HEATING)
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(minutes=6))
+    await hass.async_block_till_done()
+
+    assert "Could not send notification to notify.phone" in caplog.text
+
+
 async def test_a_fan_level_change_is_not_worth_a_message(
     hass: HomeAssistant, entry, unit, setup_entry
 ) -> None:

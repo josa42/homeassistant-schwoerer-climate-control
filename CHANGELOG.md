@@ -19,6 +19,13 @@
   It refuses to start while local changes are not pushed, since the workflow
   releases what is on GitHub.
 
+### Fixed
+
+- **Notifications reach a notify entity.** A target such as
+  `notify.my_phone` was called as a service that does not exist, so nothing
+  arrived. It now goes through `notify.send_message`, and a notification that
+  cannot be sent is logged as a warning instead of failing silently.
+
 ## 0.2.0 - 2026-10-01
 
 ### Added
