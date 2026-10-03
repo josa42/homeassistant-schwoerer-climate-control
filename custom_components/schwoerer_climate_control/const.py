@@ -236,6 +236,9 @@ CONF_BYPASS_SENSOR = "bypass_sensor"
 # Optional extra inputs.
 CONF_FORECAST_ENTITY = "forecast_entity"
 CONF_NOTIFY_SERVICE = "notify_service"
+#: Debugging aid: a message for every change of a decision, not only the notable
+#: ones. Each line is what the logbook gets.
+CONF_NOTIFY_EVERY_CHANGE = "notify_every_change"
 
 #: What counts as having energy to spare, which is a policy question rather than
 #: a measurement: a house with a battery, a tariff and a car has to decide for

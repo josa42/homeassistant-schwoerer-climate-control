@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Added
+
+- **Notify every change.** A debugging option that sends a message for every
+  change of a system or room decision, not only when a release turns over.
+  Each line is what the logbook gets, room lines start with the room's name.
+
 ### Changed
 
 - **Releases are built by the release workflow.** It runs CI, bumps the

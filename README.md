@@ -171,6 +171,10 @@ app, and gather for five minutes. A legacy notify service like
 turning over is worth a message, because it is the expensive thing in the house
 starting or stopping. A fan level is not.
 
+For debugging, **Notify every change** sends a message for every change of a
+system or room decision, the same lines the logbook gets. Room lines start with
+the room's name.
+
 <br><br>
 
 ## Dashboard

@@ -64,6 +64,7 @@ from .const import (
     CONF_NAME,
     CONF_NIGHT_END,
     CONF_NIGHT_START,
+    CONF_NOTIFY_EVERY_CHANGE,
     CONF_NOTIFY_SERVICE,
     CONF_OPERATION_MODE_SELECT,
     CONF_OUTDOOR_SENSOR,
@@ -150,6 +151,12 @@ def unit_schema(values: Mapping[str, Any]) -> vol.Schema:
         _entity(["binary_sensor", "input_boolean", "sensor"]),
     )
     _optional(schema, CONF_NOTIFY_SERVICE, values, _entity("notify"))
+    schema[
+        vol.Required(
+            CONF_NOTIFY_EVERY_CHANGE,
+            default=values.get(CONF_NOTIFY_EVERY_CHANGE, False),
+        )
+    ] = selector.BooleanSelector()
     schema[vol.Required(CONF_DRY_RUN, default=values.get(CONF_DRY_RUN, True))] = (
         selector.BooleanSelector()
     )
@@ -322,7 +329,9 @@ UNIT_KEYS: tuple[str, ...] = (
     CONF_BYPASS_SENSOR,
     CONF_FORECAST_ENTITY,
     CONF_SURPLUS_ENTITY,
+    CONF_NOTIFY_EVERY_CHANGE,
     CONF_NOTIFY_SERVICE,
+    CONF_NOTIFY_EVERY_CHANGE,
     CONF_DRY_RUN,
 )
 

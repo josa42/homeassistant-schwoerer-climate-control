@@ -59,6 +59,7 @@ from .const import (
     CONF_HEAT_RELEASE_SWITCH,
     CONF_HUMIDITY_SENSOR,
     CONF_NAME,
+    CONF_NOTIFY_EVERY_CHANGE,
     CONF_NOTIFY_SERVICE,
     CONF_OPERATION_MODE_SELECT,
     CONF_OUTDOOR_SENSOR,
@@ -443,26 +444,29 @@ class ClimateControlCoordinator(DataUpdateCoordinator[SystemDecision]):
         """One logbook entry per changed decision, carrying its sentence."""
         # Read before logging, because logging is what replaces it.
         previous = self._signatures.get("system")
-        self._log_one(
+        every_change = bool(self.hub_config.get(CONF_NOTIFY_EVERY_CHANGE))
+        changed = self._log_one(
             "system",
             decision.signature,
             self.entry.title,
             decision.message,
             self._decision_entity_id(self.entry.entry_id),
         )
-        if self._notable(decision, previous):
+        if self._notable(decision, previous) or (every_change and changed):
             self._queue_notification(decision.message)
 
         by_id = {room.room_id: room for room in self.rooms.values()}
         for room_decision in decision.rooms:
             room = by_id.get(room_decision.room_id)
-            self._log_one(
+            changed = self._log_one(
                 room_decision.room_id,
                 room_decision.signature,
                 room_decision.name,
                 room_decision.message,
                 None if room is None else self._decision_entity_id(room.subentry_id),
             )
+            if every_change and changed:
+                self._queue_notification(f"{room_decision.name}: {room_decision.message}")
 
     def _log_one(
         self,
@@ -471,13 +475,14 @@ class ClimateControlCoordinator(DataUpdateCoordinator[SystemDecision]):
         name: str,
         message: str,
         entity_id: str | None,
-    ) -> None:
+    ) -> bool:
+        """Fire a logbook entry if the decision changed, and say whether it did."""
         previous = self._signatures.get(key)
         self._signatures[key] = signature
         if previous is None or previous == signature:
             # Nothing to say on the first pass, and nothing to say when nothing
             # changed. A setpoint that drifts by a tenth is not an entry.
-            return
+            return False
         self.hass.bus.async_fire(
             EVENT_DECISION,
             {
@@ -487,6 +492,7 @@ class ClimateControlCoordinator(DataUpdateCoordinator[SystemDecision]):
                 "key": key,
             },
         )
+        return True
 
     def _notable(self, decision: SystemDecision, previous: tuple | None) -> bool:
         """Whether a person should be told, as opposed to it being logged.

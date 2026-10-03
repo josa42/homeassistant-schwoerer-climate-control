@@ -247,6 +247,44 @@ async def test_a_fan_level_change_is_not_worth_a_message(
     assert sent == []
 
 
+@pytest.mark.parametrize("every_change", [False, True])
+async def test_a_change_without_a_release_is_notified_only_when_asked_for(
+    hass: HomeAssistant, entry, unit, setup_entry, every_change: bool
+) -> None:
+    hass.config_entries.async_update_entry(
+        entry,
+        data={
+            **HUB_DATA,
+            "notify_service": "notify.phone",
+            "notify_every_change": every_change,
+        },
+    )
+    sent: list = []
+
+    async def record(call) -> None:
+        sent.append(call)
+
+    hass.services.async_register("notify", "phone", record)
+
+    unit()
+    coordinator = await setup_entry(entry)
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+    # Holiday lowers the room's target and the fan, but releases nothing.
+    await coordinator.async_set_holiday(True)
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(minutes=6))
+    await hass.async_block_till_done()
+
+    if not every_change:
+        assert sent == []
+        return
+    assert len(sent) == 1
+    assert "Wohnzimmer: " in sent[0].data["message"]
+
+
 async def test_diagnostics_say_what_it_would_write_and_whether_it_is_needed(
     hass: HomeAssistant, entry, unit, setup_entry
 ) -> None:
