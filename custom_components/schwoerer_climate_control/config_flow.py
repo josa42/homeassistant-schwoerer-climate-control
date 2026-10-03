@@ -149,7 +149,7 @@ def unit_schema(values: Mapping[str, Any]) -> vol.Schema:
         values,
         _entity(["binary_sensor", "input_boolean", "sensor"]),
     )
-    _optional(schema, CONF_NOTIFY_SERVICE, values, selector.TextSelector())
+    _optional(schema, CONF_NOTIFY_SERVICE, values, _entity("notify"))
     schema[vol.Required(CONF_DRY_RUN, default=values.get(CONF_DRY_RUN, True))] = (
         selector.BooleanSelector()
     )

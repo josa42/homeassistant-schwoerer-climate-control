@@ -63,19 +63,6 @@ async def test_an_omitted_field_is_not_stored(hass: HomeAssistant, unit) -> None
     assert "pv_sensor" not in result["data"]
 
 
-async def test_a_cleared_text_field_is_not_stored(hass: HomeAssistant, unit) -> None:
-    # The notification service is free text rather than an entity, so clearing it
-    # really does arrive as an empty string.
-    unit()
-    result = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": SOURCE_USER}
-    )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {**HUB_DATA, "notify_service": ""}
-    )
-    assert "notify_service" not in result["data"]
-
-
 async def test_adding_a_room(hass: HomeAssistant, entry, unit, setup_entry) -> None:
     unit()
     await setup_entry(entry)

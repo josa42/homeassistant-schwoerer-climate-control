@@ -19,6 +19,9 @@
   It refuses to start while local changes are not pushed, since the workflow
   releases what is on GitHub.
 
+- **The notification target is picked from the notify entities.** The field
+  was free text for a notify service. A service set up that way still works.
+
 ### Fixed
 
 - **Notifications reach a notify entity.** A target such as

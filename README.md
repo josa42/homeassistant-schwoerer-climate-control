@@ -165,7 +165,9 @@ Three things raise a repair: the unit left manual mode, a configured input has
 been unreadable for an hour, and a register will not take its value. An input that
 misses a single poll is not a repair.
 
-Notifications go to one notify service and gather for five minutes. A release
+Notifications go to one notify entity, such as your phone from the Companion
+app, and gather for five minutes. A legacy notify service like
+`notify.mobile_app_phone` still works if it was set up that way. A release
 turning over is worth a message, because it is the expensive thing in the house
 starting or stopping. A fan level is not.
 
