@@ -114,7 +114,8 @@ Without a supply air reading the room decides alone.
 
 A heater is only switched on once it has been wanted for 15 minutes, so a door
 left open for a minute or the supply air dipping while the heat pump defrosts
-does not start it. Once it runs it holds until the room reaches its setpoint or
+does not start it. The wait starts over after the controller has been switched
+off. Once it runs it holds until the room reaches its setpoint or
 the supply air clears the margin by a further kelvin.
 
 The house-wide release, register 234, follows the rooms: on while any room may

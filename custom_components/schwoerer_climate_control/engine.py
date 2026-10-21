@@ -945,8 +945,11 @@ def evaluate(
     new_state = EngineState(
         co2_high_since=_track_co2(inputs, hub, state),
         surplus_since=surplus_since,
-        # Held as it was while switched off, and replaced once rooms decide.
-        aux_needed_since=state.aux_needed_since,
+        # Unlike the fan and the surplus, the heater has to wait again after a
+        # break: nothing watched the room meanwhile, and switching on the most
+        # expensive heat in the house on an old timer is the wrong way to err.
+        # Replaced once the rooms decide.
+        aux_needed_since={},
     )
     config = EffectiveConfig(hub)
     raw = {

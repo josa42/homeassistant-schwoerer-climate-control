@@ -407,10 +407,16 @@ def test_unreadable_supply_air_leaves_the_decision_to_the_room() -> None:
     assert "supply_air" in decision.degraded
 
 
-def test_a_controller_switched_off_keeps_the_dwell_timer() -> None:
-    state = waited("wohnzimmer")
-    _, kept = run(given(rooms=(a_cold_room(),)), state=state, enabled=False)
-    assert kept.aux_needed_since == state.aux_needed_since
+def test_a_controller_switched_off_restarts_the_dwell() -> None:
+    # Nothing watched the room while the controller was off, so a timer started
+    # hours ago says nothing about whether the heater is needed now.
+    inputs = given(rooms=(a_cold_room(),))
+    _, state = run(inputs, state=waited("wohnzimmer"), enabled=False)
+    assert state.aux_needed_since == {}
+
+    decision, _ = run(inputs, state=state)
+    assert decision.rooms[0].auxiliary_heat is False
+    assert decision.rooms[0].gate_passed("aux_dwell") is False
 
 
 ################################################################################
