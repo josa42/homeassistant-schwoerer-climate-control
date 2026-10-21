@@ -15,6 +15,9 @@ The margin is the one that matters. It rests on a back-of-the-envelope figure:
 little to lift a room that is a kelvin short in any reasonable time. Nothing has
 checked that against this house.
 
+T4 itself is the right sensor. The auxiliary heaters sit in the rooms, after T4,
+so it reads what the ventilation delivers without their heat.
+
 ## What to look at
 
 Over a few cold days with the heat pump released and dry run on:
@@ -34,9 +37,6 @@ Over a few cold days with the heat pump released and dry run on:
   the recovery rate against the T4 lift.
 - Whether 15 minutes outlasts a defrost. If the supply air dips for longer, the
   dwell has to grow or a defrost has to be recognised on its own.
-- Whether T4 is the right sensor at all. It assumes the room's auxiliary heater
-  sits downstream of T4, so that T4 is what the heat pump alone delivers. If it
-  is upstream, T4 includes the heater's own heat and the test holds itself on.
 - Whether the override is wanted, or comfort should always wait for the supply
   air.
 
