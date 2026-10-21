@@ -9,6 +9,7 @@ from typing import Any
 import pytest
 
 from custom_components.schwoerer_climate_control.const import (
+    AUX_DWELL,
     CONF_AUX_HEAT_OFF_AT_NIGHT,
     CONF_CO2_HIGH,
     CONF_FAN_AIR_QUALITY,
@@ -54,6 +55,22 @@ def a_room(room_id: str = "wohnzimmer", **overrides: Any) -> RoomInputs:
     }
     defaults.update(overrides)
     return RoomInputs(**defaults)
+
+
+def a_cold_room(room_id: str = "wohnzimmer", **overrides: Any) -> RoomInputs:
+    """A room a kelvin short of its daytime setpoint, its heater not yet on."""
+    defaults: dict[str, Any] = {
+        "temperature": read(19.0),
+        "auxiliary_enabled": read(False),
+    }
+    defaults.update(overrides)
+    return a_room(room_id, **defaults)
+
+
+def waited(*room_ids: str, now: datetime = NOON) -> EngineState:
+    """State in which these rooms have wanted their heater for long enough."""
+    since = now - AUX_DWELL - timedelta(minutes=1)
+    return EngineState(aux_needed_since={room_id: since for room_id in room_ids})
 
 
 def given(**overrides: Any) -> Inputs:
@@ -154,8 +171,9 @@ def test_a_locked_release_keeps_the_auxiliary_heater_off() -> None:
     inputs = given(
         heat_release=read(False, stable=BRIEF),
         compressor_running=read(True),
+        rooms=(a_cold_room(),),
     )
-    decision, _ = run(inputs)
+    decision, _ = run(inputs, state=waited("wohnzimmer"))
     assert decision.rooms[0].auxiliary_heat is False
 
 
@@ -259,7 +277,11 @@ def test_a_setpoint_is_clamped_to_what_the_device_accepts() -> None:
 
 
 def test_the_auxiliary_heater_runs_when_it_is_cold_and_heating_is_released() -> None:
-    assert run(given(outdoor=read(5.0)))[0].rooms[0].auxiliary_heat is True
+    inputs = given(outdoor=read(5.0), rooms=(a_cold_room(),))
+    decision, _ = run(inputs, state=waited("wohnzimmer"))
+    room = decision.rooms[0]
+    assert room.auxiliary_heat is True
+    assert "1.0 K short" in room.message
 
 
 def test_the_auxiliary_heater_stays_off_when_it_is_not_cold_enough() -> None:
@@ -271,11 +293,156 @@ def test_the_auxiliary_heater_stays_off_when_it_is_not_cold_enough() -> None:
 
 
 def test_the_auxiliary_heater_is_off_at_night_in_a_bedroom() -> None:
-    bedroom = a_room("schlafzimmer", config={CONF_AUX_HEAT_OFF_AT_NIGHT: True})
-    decision, _ = run(given(now=NIGHT, rooms=(bedroom, a_room())))
+    # A kelvin under the night setback of 19.
+    bedroom = a_cold_room(
+        "schlafzimmer",
+        temperature=read(18.0),
+        config={CONF_AUX_HEAT_OFF_AT_NIGHT: True},
+    )
+    living = a_cold_room(temperature=read(18.0))
+    state = waited("schlafzimmer", "wohnzimmer", now=NIGHT)
+    decision, _ = run(given(now=NIGHT, rooms=(bedroom, living)), state=state)
     by_name = {room.room_id: room for room in decision.rooms}
     assert by_name["schlafzimmer"].auxiliary_heat is False
     assert by_name["wohnzimmer"].auxiliary_heat is True
+
+
+def test_a_room_at_its_setpoint_needs_no_auxiliary_heater() -> None:
+    # Cold outside and the heat pump released, but the room is where it should
+    # be, so there is nothing for the second stage to do.
+    decision, _ = run(given(rooms=(a_room(temperature=read(20.0)),)))
+    room = decision.rooms[0]
+    assert room.auxiliary_heat is False
+    assert room.gate_passed("aux_room_below_target") is False
+
+
+def test_a_room_only_just_short_of_its_setpoint_waits_for_the_heat_pump() -> None:
+    decision, _ = run(
+        given(rooms=(a_cold_room(temperature=read(19.7)),)), state=waited("wohnzimmer")
+    )
+    assert decision.rooms[0].auxiliary_heat is False
+
+
+def test_the_auxiliary_heater_waits_out_the_dwell_time() -> None:
+    inputs = given(rooms=(a_cold_room(),))
+    decision, state = run(inputs)
+    room = decision.rooms[0]
+    assert room.auxiliary_heat is False
+    assert room.gate_passed("aux_dwell") is False
+    assert "auxiliary heater in 15 min" in room.message
+    assert state.aux_needed_since == {"wohnzimmer": NOON}
+
+    # Still wanted a quarter of an hour later, and now it gets it. The timer
+    # carries its start rather than restarting on every evaluation.
+    later = replace(inputs, now=NOON + AUX_DWELL)
+    decision, state = run(later, state=state)
+    assert decision.rooms[0].auxiliary_heat is True
+    assert state.aux_needed_since == {"wohnzimmer": NOON}
+
+
+def test_a_room_that_stops_wanting_its_heater_restarts_the_dwell() -> None:
+    _, state = run(given(rooms=(a_cold_room(),)))
+    _, state = run(given(rooms=(a_room(temperature=read(20.0)),)), state=state)
+    assert state.aux_needed_since == {}
+
+
+def test_warm_supply_air_leaves_the_room_to_the_heat_pump() -> None:
+    # Eight kelvin above the room is the heat pump bringing the heat already.
+    inputs = given(supply_air=read(27.0), rooms=(a_cold_room(),))
+    decision, state = run(inputs, state=waited("wohnzimmer"))
+    room = decision.rooms[0]
+    assert room.auxiliary_heat is False
+    assert room.gate_passed("aux_supply_insufficient") is False
+    assert state.aux_needed_since == {}
+
+
+def test_lukewarm_supply_air_calls_for_the_auxiliary_heater() -> None:
+    inputs = given(supply_air=read(21.0), rooms=(a_cold_room(),))
+    decision, _ = run(inputs, state=waited("wohnzimmer"))
+    room = decision.rooms[0]
+    assert room.auxiliary_heat is True
+    assert room.gate_passed("aux_supply_insufficient") is True
+    assert "supply air only 2.0 K above it" in room.message
+
+
+def test_a_room_far_below_its_setpoint_gets_heat_whatever_the_supply_air() -> None:
+    inputs = given(supply_air=read(30.0), rooms=(a_cold_room(temperature=read(17.5)),))
+    decision, _ = run(inputs, state=waited("wohnzimmer"))
+    room = decision.rooms[0]
+    assert room.auxiliary_heat is True
+    assert room.gate_passed("aux_override") is True
+
+
+def test_a_running_auxiliary_heater_holds_until_the_room_reaches_its_setpoint() -> None:
+    # 0.2 K short would not switch it on, but it does not switch it off either.
+    running = a_cold_room(temperature=read(19.8), auxiliary_enabled=read(True))
+    assert run(given(rooms=(running,)))[0].rooms[0].auxiliary_heat is True
+
+    there = replace(running, temperature=read(20.0))
+    assert run(given(rooms=(there,)))[0].rooms[0].auxiliary_heat is False
+
+
+def test_a_running_auxiliary_heater_holds_against_a_little_more_supply_air() -> None:
+    # 5.5 K is past the 5 K margin but inside the kelvin of hysteresis above it.
+    supply = read(24.5)
+    running = a_cold_room(auxiliary_enabled=read(True))
+    assert run(given(supply_air=supply, rooms=(running,)))[0].rooms[0].auxiliary_heat is True
+
+    idle = a_cold_room()
+    decision, _ = run(given(supply_air=supply, rooms=(idle,)), state=waited("wohnzimmer"))
+    assert decision.rooms[0].auxiliary_heat is False
+
+
+def test_a_running_auxiliary_heater_has_no_dwell_to_wait_out() -> None:
+    running = a_cold_room(auxiliary_enabled=read(True))
+    decision, _ = run(given(rooms=(running,)))
+    assert decision.rooms[0].auxiliary_heat is True
+    assert decision.rooms[0].gate_passed("aux_dwell") is None
+
+
+def test_unreadable_supply_air_leaves_the_decision_to_the_room() -> None:
+    inputs = given(supply_air=Reading(), rooms=(a_cold_room(),))
+    decision, _ = run(inputs, state=waited("wohnzimmer"))
+    assert decision.rooms[0].auxiliary_heat is True
+    assert "supply_air" in decision.degraded
+
+
+def test_a_controller_switched_off_keeps_the_dwell_timer() -> None:
+    state = waited("wohnzimmer")
+    _, kept = run(given(rooms=(a_cold_room(),)), state=state, enabled=False)
+    assert kept.aux_needed_since == state.aux_needed_since
+
+
+################################################################################
+# The house-wide auxiliary heating release
+
+
+def test_the_house_release_is_on_while_any_room_heats() -> None:
+    rooms = (a_cold_room(), a_room("kueche", temperature=read(20.5)))
+    decision, _ = run(given(rooms=rooms), state=waited("wohnzimmer"))
+    assert decision.auxiliary_heat_house is True
+    assert "auxiliary heat in Wohnzimmer" in decision.message
+
+
+def test_the_house_release_is_off_once_no_room_heats() -> None:
+    decision, _ = run(given(rooms=(a_room(temperature=read(20.5)),)))
+    assert decision.auxiliary_heat_house is False
+
+
+def test_the_house_release_is_off_while_ventilating() -> None:
+    decision, _ = run(
+        given(rooms=(a_cold_room(),)), state=waited("wohnzimmer"), mode=Mode.VENTILATION
+    )
+    assert decision.auxiliary_heat_house is False
+
+
+def test_the_house_release_is_left_alone_without_a_room_of_the_unit() -> None:
+    generic = a_room("bad", actuator=ActuatorKind.GENERIC)
+    assert run(given(rooms=(generic,)))[0].auxiliary_heat_house is None
+
+
+def test_the_house_release_is_left_alone_while_switched_off() -> None:
+    assert run(given(rooms=(a_cold_room(),)), enabled=False)[0].auxiliary_heat_house is None
 
 
 def test_a_wgt_room_has_no_separate_on_and_off() -> None:

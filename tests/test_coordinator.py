@@ -5,12 +5,33 @@ from __future__ import annotations
 from datetime import timedelta
 
 import pytest
+from homeassistant.config_entries import ConfigSubentryData
 from homeassistant.core import HomeAssistant
-from pytest_homeassistant_custom_component.common import async_fire_time_changed
+from homeassistant.util import dt as dt_util
+from pytest_homeassistant_custom_component.common import (
+    MockConfigEntry,
+    async_fire_time_changed,
+)
 
-from custom_components.schwoerer_climate_control.const import STUCK_AFTER, Mode
+from custom_components.schwoerer_climate_control.const import (
+    CONF_AUX_HOUSE_SWITCH,
+    DOMAIN,
+    STUCK_AFTER,
+    SUBENTRY_TYPE_ROOM,
+    Mode,
+)
+from custom_components.schwoerer_climate_control.engine import EngineState
 
-from .conftest import CONTACT, FAN, HEAT, OPERATION_MODE, THERMOSTAT
+from .conftest import (
+    CONTACT,
+    FAN,
+    HEAT,
+    HUB_DATA,
+    OPERATION_MODE,
+    ROOM_DATA,
+    THERMOSTAT,
+    record_writes,
+)
 
 
 async def test_the_first_evaluation_never_writes(
@@ -338,3 +359,80 @@ async def test_switching_off_stops_a_bundle_part_way_through(
     await hass.async_block_till_done()
 
     assert len(calls) == 1, "the rest of the bundle was dropped"
+
+
+AUX_HOUSE = "switch.aux_house"
+
+
+@pytest.fixture
+def start_with_aux_house(hass: HomeAssistant, unit, monkeypatch: pytest.MonkeyPatch):
+    """A controller that also drives the house-wide auxiliary heating release."""
+    monkeypatch.setattr(
+        "custom_components.schwoerer_climate_control.coordinator.MIN_WRITE_INTERVAL",
+        timedelta(0),
+    )
+
+    async def _start(house: str, **scene):
+        unit(**scene)
+        hass.states.async_set(AUX_HOUSE, house)
+        mock_entry = MockConfigEntry(
+            domain=DOMAIN,
+            title="Schwörer Climate Control",
+            data={**HUB_DATA, CONF_AUX_HOUSE_SWITCH: AUX_HOUSE},
+            subentries_data=[
+                ConfigSubentryData(
+                    data=ROOM_DATA,
+                    subentry_type=SUBENTRY_TYPE_ROOM,
+                    title="Wohnzimmer",
+                    unique_id=None,
+                )
+            ],
+        )
+        mock_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(mock_entry.entry_id)
+        await hass.async_block_till_done()
+        coordinator = mock_entry.runtime_data
+        await coordinator.async_set_mode(Mode.HEATING)
+        await hass.async_block_till_done()
+        return coordinator, record_writes(hass)
+
+    return _start
+
+
+def written(calls: list) -> list[tuple[str, str]]:
+    return [(call.data["entity_id"], call.service) for call in calls]
+
+
+async def test_the_house_release_goes_on_before_the_room(
+    hass: HomeAssistant, start_with_aux_house
+) -> None:
+    # Short of the setpoint by day and by night alike, so the wall clock the
+    # test runs at does not matter.
+    coordinator, calls = await start_with_aux_house("off", heat="on", current=17.5)
+    coordinator.engine_state = EngineState(
+        aux_needed_since={"wohnzimmer": dt_util.now() - timedelta(hours=1)}
+    )
+
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    order = written(calls)
+    assert order.index((AUX_HOUSE, "turn_on")) < order.index(
+        (THERMOSTAT, "set_hvac_mode")
+    )
+
+
+async def test_the_house_release_goes_off_after_the_room(
+    hass: HomeAssistant, start_with_aux_house
+) -> None:
+    coordinator, calls = await start_with_aux_house(
+        "on", heat="on", current=20.5, hvac_mode="heat"
+    )
+
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    order = written(calls)
+    assert order.index((THERMOSTAT, "set_hvac_mode")) < order.index(
+        (AUX_HOUSE, "turn_off")
+    )

@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **The house-wide auxiliary heating release is driven.** Register 234 is on
+  while any room may run its auxiliary heater and off once none may, written
+  before the rooms are released and after they are withdrawn. Pick the entity
+  under *Entities*; it is discovered for a new setup and suggested for an
+  existing one.
+
+### Changed
+
+- **An auxiliary heater only runs when the room needs it.** It used to be
+  released whenever it was cold enough outside. Now the room also has to be
+  short of its setpoint, and the supply air (T4, after the reheater) has to be
+  arriving too cool to warm it, with a dwell time on the way in and hysteresis
+  on the way out. Three new thresholds, each overridable per room. Without a
+  supply air sensor the room decides alone.
+
 ## 1.0.0 - 2026-10-03
 
 ### Added

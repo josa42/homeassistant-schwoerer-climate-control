@@ -30,8 +30,12 @@ from homeassistant.helpers import selector
 from .const import (
     CONF_ACTUATOR,
     CONF_ADD_ROOMS,
+    CONF_AUX_DEFICIT,
+    CONF_AUX_DEFICIT_OVERRIDE,
     CONF_AUX_HEAT_BELOW,
     CONF_AUX_HEAT_OFF_AT_NIGHT,
+    CONF_AUX_HOUSE_SWITCH,
+    CONF_AUX_SUPPLY_MARGIN,
     CONF_BYPASS_SENSOR,
     CONF_CLIMATE_ENTITY,
     CONF_CO2_HIGH,
@@ -69,6 +73,7 @@ from .const import (
     CONF_OPERATION_MODE_SELECT,
     CONF_OUTDOOR_SENSOR,
     CONF_RELEASE_HYSTERESIS,
+    CONF_SUPPLY_AIR_SENSOR,
     CONF_SUPPLY_TEMPERATURE_SENSOR,
     CONF_SURPLUS_ENTITY,
     CONF_SURPLUS_START,
@@ -108,6 +113,15 @@ def _temperature(low: float = TARGET_MIN, high: float = TARGET_MAX) -> Any:
     )
 
 
+def _kelvin(low: float, high: float) -> Any:
+    """A temperature difference, which is not a temperature."""
+    return selector.NumberSelector(
+        selector.NumberSelectorConfig(
+            min=low, max=high, step=0.1, unit_of_measurement="K", mode="box"
+        )
+    )
+
+
 def _stage() -> Any:
     return selector.NumberSelector(
         selector.NumberSelectorConfig(min=0, max=4, step=1, mode="slider")
@@ -140,7 +154,12 @@ def unit_schema(values: Mapping[str, Any]) -> vol.Schema:
     for key, field in required.items():
         schema[vol.Required(key, description=_suggest(key, values))] = field
 
-    for key in (CONF_SUPPLY_TEMPERATURE_SENSOR, CONF_EXTRACT_TEMPERATURE_SENSOR):
+    _optional(schema, CONF_AUX_HOUSE_SWITCH, values, _entity("switch"))
+    for key in (
+        CONF_SUPPLY_AIR_SENSOR,
+        CONF_SUPPLY_TEMPERATURE_SENSOR,
+        CONF_EXTRACT_TEMPERATURE_SENSOR,
+    ):
         _optional(schema, key, values, _entity("sensor", device_class="temperature"))
     _optional(schema, CONF_BYPASS_SENSOR, values, _entity("sensor"))
     _optional(schema, CONF_FORECAST_ENTITY, values, _entity("weather"))
@@ -217,6 +236,9 @@ def thresholds_schema(values: Mapping[str, Any]) -> vol.Schema:
         CONF_RELEASE_HYSTERESIS: _temperature(0, 5),
         CONF_FORECAST_BLOCKS_ABOVE: _temperature(-20, 30),
         CONF_AUX_HEAT_BELOW: _temperature(-20, 30),
+        CONF_AUX_DEFICIT: _kelvin(0, 5),
+        CONF_AUX_DEFICIT_OVERRIDE: _kelvin(0, 10),
+        CONF_AUX_SUPPLY_MARGIN: _kelvin(0, 20),
         CONF_COOL_RELEASE_ABOVE: _temperature(),
         CONF_FAN_NORMAL: _stage(),
         CONF_FAN_NIGHT: _stage(),
@@ -298,6 +320,9 @@ def room_schema(values: Mapping[str, Any]) -> vol.Schema:
     _optional(schema, CONF_NIGHT_START, values, selector.TimeSelector())
     _optional(schema, CONF_NIGHT_END, values, selector.TimeSelector())
     _optional(schema, CONF_AUX_HEAT_BELOW, values, _temperature(-20, 30))
+    _optional(schema, CONF_AUX_DEFICIT, values, _kelvin(0, 5))
+    _optional(schema, CONF_AUX_DEFICIT_OVERRIDE, values, _kelvin(0, 10))
+    _optional(schema, CONF_AUX_SUPPLY_MARGIN, values, _kelvin(0, 20))
     _optional(schema, CONF_HUMIDITY_HIGH, values, selector.NumberSelector(
         selector.NumberSelectorConfig(min=30, max=100, step=1, unit_of_measurement="%")
     ))
@@ -324,6 +349,8 @@ UNIT_KEYS: tuple[str, ...] = (
     CONF_FUNCTION_SELECT,
     CONF_COMPRESSOR_SENSOR,
     CONF_OPERATION_MODE_SELECT,
+    CONF_AUX_HOUSE_SWITCH,
+    CONF_SUPPLY_AIR_SENSOR,
     CONF_SUPPLY_TEMPERATURE_SENSOR,
     CONF_EXTRACT_TEMPERATURE_SENSOR,
     CONF_BYPASS_SENSOR,
@@ -418,7 +445,12 @@ class ClimateControlOptionsFlow(OptionsFlow):
                 data=_replace(self.config_entry.options, user_input, UNIT_KEYS)
             )
         current = {**self.config_entry.data, **self.config_entry.options}
-        return self.async_show_form(step_id="entities", data_schema=unit_schema(current))
+        # Discovery fills in only what was never set, so an entity added to the
+        # controller after setup is suggested without touching anything chosen.
+        suggested = {**discover_unit(self.hass), **current}
+        return self.async_show_form(
+            step_id="entities", data_schema=unit_schema(suggested)
+        )
 
     async def async_step_thresholds(
         self, user_input: dict[str, Any] | None = None

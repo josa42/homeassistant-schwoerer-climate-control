@@ -236,6 +236,9 @@ class SystemDecision:
     heat_release: bool | None = None
     cool_release: bool | None = None
     heating_cooling_function: HeatingCoolingFunction | None = None
+    #: Register 234, the house-wide release of the auxiliary heaters. On while
+    #: any room may run its own, and ``None`` where there is no room to release.
+    auxiliary_heat_house: bool | None = None
     fan_level: int | None = None
     fan_reason: FanReason | None = None
     #: The room that asked for the fan level, when one did.
@@ -268,6 +271,7 @@ class SystemDecision:
             "holiday": self.holiday,
             "heat_release": self.heat_release,
             "cool_release": self.cool_release,
+            "auxiliary_heat_house": self.auxiliary_heat_house,
             "fan_level": self.fan_level,
             "fan_reason": None if self.fan_reason is None else str(self.fan_reason),
             "fan_requested_by": self.fan_requested_by,
@@ -285,6 +289,7 @@ class SystemDecision:
             str(self.reason),
             self.heat_release,
             self.cool_release,
+            self.auxiliary_heat_house,
             self.fan_level,
             None if self.fan_reason is None else str(self.fan_reason),
         )
@@ -306,6 +311,7 @@ class SystemDecision:
                 if self.heating_cooling_function is None
                 else str(self.heating_cooling_function)
             ),
+            "auxiliary_heat_house": self.auxiliary_heat_house,
             "fan_level": self.fan_level,
             "fan_reason": None if self.fan_reason is None else str(self.fan_reason),
             "fan_requested_by": self.fan_requested_by,

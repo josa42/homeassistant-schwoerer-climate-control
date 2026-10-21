@@ -15,14 +15,19 @@ later changes where it comes from and not what anything does with it.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass, field
-from datetime import datetime, time
+from dataclasses import dataclass, field, replace
+from datetime import datetime, time, timedelta
 from typing import Any
 
 from .const import (
+    AUX_DWELL,
+    AUX_SUPPLY_HYSTERESIS,
     CO2_DWELL,
+    CONF_AUX_DEFICIT,
+    CONF_AUX_DEFICIT_OVERRIDE,
     CONF_AUX_HEAT_BELOW,
     CONF_AUX_HEAT_OFF_AT_NIGHT,
+    CONF_AUX_SUPPLY_MARGIN,
     CONF_CO2_HIGH,
     CONF_COOL_RELEASE_ABOVE,
     CONF_FAN_AIR_QUALITY,
@@ -92,6 +97,9 @@ class RoomInputs:
     co2: Reading | None = None
     #: What heats the room, which decides what its hvac mode means.
     actuator: ActuatorKind = ActuatorKind.WGT_ROOM
+    #: Whether the device reports the room's auxiliary heater as released now,
+    #: which is what the hysteresis holds on to. ``None`` for a room without one.
+    auxiliary_enabled: Reading | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -103,6 +111,9 @@ class Inputs:
     #: The air leaving the house, which decides what temperature the supply air
     #: arrives at and is therefore what "too warm outside" is measured against.
     extract: Reading | None = None
+    #: The air the unit hands the rooms, after everything that heats it. What
+    #: decides whether the heat pump is getting a room warm on its own.
+    supply_air: Reading | None = None
     forecast_max: Reading | None = None
     #: Whether there is energy to spare, as the house itself defines it. An
     #: on/off entity is taken at its word; a number is read against thresholds.
@@ -120,12 +131,15 @@ class Inputs:
 class EngineState:
     """Runtime state carried between evaluations.
 
-    Only what cannot be read back from an entity belongs here. Both of these
+    Only what cannot be read back from an entity belongs here. All of these
     are "since when has this held", which no sensor reports.
     """
 
     co2_high_since: Mapping[str, datetime] = field(default_factory=dict)
     surplus_since: datetime | None = None
+    #: Per room, since when its auxiliary heater has been wanted and not yet
+    #: switched on.
+    aux_needed_since: Mapping[str, datetime] = field(default_factory=dict)
 
 
 def _parse_time(value: str) -> time:
@@ -435,6 +449,72 @@ def _cool_wanted(
     return True, Reason.COOL_RELEASED, gates, whose
 
 
+def _aux_needed(
+    config: EffectiveConfig,
+    *,
+    temperature: float,
+    target: float,
+    supply: float | None,
+    running: bool,
+) -> tuple[bool, list[Gate], str]:
+    """Whether a room needs more heat than the supply air is bringing it.
+
+    The heat pump heats the supply air, so a room that is short of its setpoint
+    while the supply air arrives well above it is one that is catching up. Its
+    auxiliary heater would only spend electricity on what is coming anyway. One
+    whose supply air is barely warmer than the room, because the heat pump is at
+    its limit, defrosting or standing still, is one the ventilation cannot warm.
+
+    Both tests hold on once the heater runs: it stays on until the room reaches
+    its setpoint or the supply air clears the margin by a further kelvin.
+    """
+    deficit = round(target - temperature, 2)
+    start = config.number(CONF_AUX_DEFICIT)
+    override = config.number(CONF_AUX_DEFICIT_OVERRIDE)
+    margin = config.number(CONF_AUX_SUPPLY_MARGIN)
+
+    below = deficit > 0 if running else deficit >= start
+    gates = [
+        Gate(
+            "aux_room_below_target",
+            below,
+            f"{temperature} °C against {target} °C, {deficit:.1f} K short",
+        )
+    ]
+    if not below:
+        return False, gates, ""
+
+    if deficit >= override:
+        # However warm the supply air, a room this far off is not catching up
+        # quickly enough to wait for.
+        gates.append(
+            Gate("aux_override", True, f"{deficit:.1f} K short, at least {override} K")
+        )
+        return True, gates, f"the room is {deficit:.1f} K short"
+
+    if supply is None:
+        # Not knowing the supply air leaves the decision to the room, which is
+        # what it was before the supply air was considered.
+        gates.append(Gate("aux_supply_insufficient", True, "no supply air reading"))
+        return True, gates, f"the room is {deficit:.1f} K short"
+
+    lift = round(supply - temperature, 2)
+    limit = margin + AUX_SUPPLY_HYSTERESIS if running else margin
+    insufficient = lift < limit
+    gates.append(
+        Gate(
+            "aux_supply_insufficient",
+            insufficient,
+            f"supply air {supply} °C, {lift:.1f} K above the room, limit {limit} K",
+        )
+    )
+    return (
+        insufficient,
+        gates,
+        f"the room is {deficit:.1f} K short and the supply air only {lift:.1f} K above it",
+    )
+
+
 #: Settings that belong to the unit rather than to a room, recorded with the
 #: system decision so the numbers behind a release are in the record too.
 SYSTEM_SETTINGS: tuple[str, ...] = (
@@ -471,8 +551,14 @@ def _room_decision(
     heating_active: bool,
     outdoor: float | None,
     surplus: bool,
-) -> RoomDecision:
-    """Decide one room's setpoint and whether its auxiliary heater may run."""
+    supply: float | None = None,
+    aux_since: datetime | None = None,
+) -> tuple[RoomDecision, bool]:
+    """Decide one room's setpoint and whether its auxiliary heater may run.
+
+    The second value says whether the auxiliary heater is wanted, before the
+    dwell time has had its say, so that the caller can carry the timer.
+    """
     config = EffectiveConfig(hub, room.config)
     settings = config.snapshot()
     raw = {
@@ -491,7 +577,7 @@ def _room_decision(
             message="Controller is off, nothing is written",
             inputs=raw,
             settings=settings,
-        )
+        ), False
 
     window_open, failed_contacts = _window_open(room.contacts)
     night = _is_night(config, now)
@@ -555,11 +641,19 @@ def _room_decision(
 
     auxiliary: bool | None = None
     heating_enabled: bool | None = None
+    wanted = False
+    aux_why = ""
+    aux_waiting: timedelta | None = None
     if room.actuator is ActuatorKind.WGT_ROOM:
         aux_below = config.number(CONF_AUX_HEAT_BELOW)
         off_at_night = bool(config.get(CONF_AUX_HEAT_OFF_AT_NIGHT))
         cold_enough = outdoor is not None and outdoor < aux_below
-        auxiliary = (
+        running = (
+            room.auxiliary_enabled is not None
+            and not room.auxiliary_enabled.missing
+            and bool(room.auxiliary_enabled.value)
+        )
+        allowed = (
             mode is Mode.HEATING
             and heating_active
             and cold_enough
@@ -578,6 +672,35 @@ def _room_decision(
         )
         if off_at_night:
             gates.append(Gate("aux_allowed_now", not night, "off at night in this room"))
+
+        needed = False
+        if temperature is not None:
+            needed, need_gates, aux_why = _aux_needed(
+                config,
+                temperature=temperature,
+                target=target,
+                supply=supply,
+                running=running,
+            )
+            gates.extend(need_gates)
+
+        wanted = allowed and needed
+        auxiliary = wanted
+        if wanted and not running:
+            # Only on the way in. A heater that runs has already waited, and
+            # one being withdrawn should go at once.
+            held = now - (aux_since or now)
+            auxiliary = held >= AUX_DWELL
+            if not auxiliary:
+                aux_waiting = AUX_DWELL - held
+            gates.append(
+                Gate(
+                    "aux_dwell",
+                    auxiliary,
+                    f"wanted for {held.total_seconds() / 60:.0f} of "
+                    f"{AUX_DWELL.total_seconds() / 60:.0f} min",
+                )
+            )
     else:
         # A heater of its own regulates its room; all this decides is whether it
         # may run. The setpoint already carries holiday and the night setback.
@@ -592,10 +715,11 @@ def _room_decision(
         heating_enabled=heating_enabled,
         config=config,
         temperature=temperature,
-        outdoor=outdoor,
+        aux_why=aux_why,
+        aux_waiting=aux_waiting,
     )
 
-    return RoomDecision(
+    decision = RoomDecision(
         room_id=room.room_id,
         name=room.name,
         intent=intent,
@@ -610,6 +734,7 @@ def _room_decision(
         settings=settings,
         degraded=tuple(degraded),
     )
+    return decision, wanted
 
 
 def _room_message(
@@ -621,7 +746,8 @@ def _room_message(
     heating_enabled: bool | None,
     config: EffectiveConfig,
     temperature: float | None,
-    outdoor: float | None,
+    aux_why: str,
+    aux_waiting: timedelta | None,
 ) -> str:
     """One sentence saying what this room is doing and why."""
     if reason is RoomReason.WINDOW_OPEN:
@@ -643,7 +769,10 @@ def _room_message(
     if intent is RoomIntent.IDLE:
         head += ", nothing heating or cooling"
     if auxiliary:
-        head += f", auxiliary heater on because outdoor {outdoor} °C"
+        head += f", auxiliary heater on because {aux_why}"
+    elif aux_waiting is not None:
+        minutes = max(1, round(aux_waiting.total_seconds() / 60))
+        head += f", auxiliary heater in {minutes} min, {aux_why}"
     if heating_enabled is False:
         head += ", heater off"
     return head
@@ -816,12 +945,15 @@ def evaluate(
     new_state = EngineState(
         co2_high_since=_track_co2(inputs, hub, state),
         surplus_since=surplus_since,
+        # Held as it was while switched off, and replaced once rooms decide.
+        aux_needed_since=state.aux_needed_since,
     )
     config = EffectiveConfig(hub)
     raw = {
         "outdoor": inputs.outdoor.as_dict(),
         "forecast_max": None if inputs.forecast_max is None else inputs.forecast_max.as_dict(),
         "extract": None if inputs.extract is None else inputs.extract.as_dict(),
+        "supply_air": None if inputs.supply_air is None else inputs.supply_air.as_dict(),
         "surplus": None if inputs.surplus is None else inputs.surplus.as_dict(),
         "heat_release": inputs.heat_release.as_dict(),
         "cool_release": inputs.cool_release.as_dict(),
@@ -841,7 +973,7 @@ def evaluate(
                 heating_active=False,
                 outdoor=None,
                 surplus=False,
-            )
+            )[0]
             for room in inputs.rooms
         )
         return (
@@ -919,7 +1051,11 @@ def evaluate(
     )
     is_night = _is_night(config, inputs.now)
 
-    rooms = tuple(
+    supply = None if inputs.supply_air is None else inputs.supply_air.as_number()
+    if inputs.supply_air is not None and supply is None:
+        degraded.append("supply_air")
+
+    decided = [
         _room_decision(
             room,
             hub,
@@ -930,11 +1066,30 @@ def evaluate(
             heating_active=bool(heating_active),
             outdoor=outdoor,
             surplus=surplus,
+            supply=supply,
+            aux_since=state.aux_needed_since.get(room.room_id),
         )
         for room in inputs.rooms
+    ]
+    rooms = tuple(room for room, _ in decided)
+    new_state = replace(
+        new_state,
+        aux_needed_since={
+            room.room_id: state.aux_needed_since.get(room.room_id, inputs.now)
+            for room, wanted in decided
+            if wanted
+        },
     )
     for room in rooms:
         degraded.extend(room.degraded)
+
+    # The house-wide release follows the rooms: on while any one of them may
+    # run its heater, off once none may. A house without a room of the unit has
+    # nothing to release and leaves the register alone.
+    aux_rooms = [room for room in rooms if room.auxiliary_heat is not None]
+    auxiliary_heat_house = (
+        any(room.auxiliary_heat for room in aux_rooms) if aux_rooms else None
+    )
 
     fan_level, fan_reason, fan_requested_by, fan_capped_from = _fan_level(
         rooms,
@@ -962,6 +1117,7 @@ def evaluate(
             fan_reason=fan_reason,
             fan_requested_by=fan_requested_by,
             fan_capped_from=fan_capped_from,
+            aux_rooms=tuple(room.name for room in aux_rooms if room.auxiliary_heat),
         ),
         mode=effective_mode,
         requested_mode=mode,
@@ -969,6 +1125,7 @@ def evaluate(
         heat_release=heat_release,
         cool_release=cool_release,
         heating_cooling_function=function,
+        auxiliary_heat_house=auxiliary_heat_house,
         fan_level=fan_level,
         fan_reason=fan_reason,
         fan_requested_by=fan_requested_by,
@@ -995,6 +1152,7 @@ def _system_message(
     fan_reason: FanReason,
     fan_requested_by: str | None,
     fan_capped_from: int | None,
+    aux_rooms: tuple[str, ...] = (),
 ) -> str:
     """One sentence for the system decision."""
     threshold = config.number(CONF_HEAT_RELEASE_BELOW)
@@ -1025,4 +1183,6 @@ def _system_message(
     fan += f" ({fan_reason})"
     if fan_capped_from is not None:
         fan += f", capped from {fan_capped_from}"
+    if aux_rooms:
+        fan += f", auxiliary heat in {', '.join(aux_rooms)}"
     return f"{head}. Mode {mode}, {fan}"

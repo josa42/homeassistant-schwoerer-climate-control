@@ -40,6 +40,16 @@ OUTDOOR_MAX_AGE = timedelta(minutes=30)
 #: that a bright gap in an overcast sky is not an invitation.
 SURPLUS_DWELL = timedelta(minutes=20)
 
+#: How long a room has to need its auxiliary heater before it gets it. A door
+#: left open for a minute, or the supply air dipping while the heat pump
+#: defrosts, is not a reason to switch on the most expensive heat in the house.
+AUX_DWELL = timedelta(minutes=15)
+
+#: How much more the supply air has to bring before a running auxiliary heater
+#: is withdrawn for it, on top of the margin that switched it on. Without it the
+#: heater flips with every tenth the supply air moves around the margin.
+AUX_SUPPLY_HYSTERESIS = 1.0
+
 #: How long a state change waits for others to join it. A contact that chatters,
 #: or six rooms reporting within a second of each other, is one evaluation.
 EVALUATION_DEBOUNCE = timedelta(seconds=30)
@@ -223,6 +233,12 @@ CONF_HEAT_RELEASE_SWITCH = "heat_release_switch"
 CONF_COOL_RELEASE_SWITCH = "cool_release_switch"
 CONF_FUNCTION_SELECT = "function_select"
 CONF_COMPRESSOR_SENSOR = "compressor_sensor"
+#: Register 234, the house-wide release of the auxiliary heaters. Optional, so
+#: that a setup from before it was driven keeps working without it.
+CONF_AUX_HOUSE_SWITCH = "aux_house_switch"
+#: The air the unit actually hands the rooms, T4 after the reheater. Optional:
+#: without it the auxiliary heater is decided on the room alone.
+CONF_SUPPLY_AIR_SENSOR = "supply_air_sensor"
 #: Read, never written. The decisions assume the unit is in manual, and a repair
 #: says so when it is not.
 CONF_OPERATION_MODE_SELECT = "operation_mode_select"
@@ -280,6 +296,15 @@ CONF_RELEASE_HYSTERESIS = "release_hysteresis"
 CONF_FORECAST_BLOCKS_ABOVE = "forecast_blocks_above"
 CONF_AUX_HEAT_BELOW = "aux_heat_below"
 CONF_AUX_HEAT_OFF_AT_NIGHT = "aux_heat_off_at_night"
+#: How far below its setpoint a room has to be before its auxiliary heater is
+#: worth considering at all.
+CONF_AUX_DEFICIT = "aux_deficit"
+#: How far below its setpoint a room may fall before the supply air no longer
+#: gets a say. Comfort wins eventually, however warm the supply air is.
+CONF_AUX_DEFICIT_OVERRIDE = "aux_deficit_override"
+#: How much warmer than the room the supply air has to be for the heat pump to
+#: be trusted with it. Below this the ventilation brings next to no heat.
+CONF_AUX_SUPPLY_MARGIN = "aux_supply_margin"
 CONF_COOL_RELEASE_ABOVE = "cool_release_above"
 
 #: Below this room temperature the house is protected whatever the mode says.
@@ -338,6 +363,10 @@ DEFAULTS: dict[str, object] = {
     CONF_FORECAST_BLOCKS_ABOVE: 5.0,
     CONF_AUX_HEAT_BELOW: 10.0,
     CONF_AUX_HEAT_OFF_AT_NIGHT: False,
+    # Estimates rather than measurements, see docs/todos/aux-heat-thresholds.md.
+    CONF_AUX_DEFICIT: 0.5,
+    CONF_AUX_DEFICIT_OVERRIDE: 2.0,
+    CONF_AUX_SUPPLY_MARGIN: 5.0,
     CONF_COOL_RELEASE_ABOVE: 26.0,
     CONF_FROST_PROTECTION_BELOW: 12.0,
     CONF_FAN_NORMAL: 2,
@@ -375,6 +404,9 @@ OVERRIDABLE: tuple[str, ...] = (
     CONF_NIGHT_END,
     CONF_AUX_HEAT_BELOW,
     CONF_AUX_HEAT_OFF_AT_NIGHT,
+    CONF_AUX_DEFICIT,
+    CONF_AUX_DEFICIT_OVERRIDE,
+    CONF_AUX_SUPPLY_MARGIN,
     CONF_FROST_PROTECTION_BELOW,
     CONF_HUMIDITY_HIGH,
     CONF_CO2_HIGH,
