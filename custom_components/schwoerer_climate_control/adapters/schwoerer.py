@@ -13,6 +13,7 @@ from typing import Any
 from homeassistant.components.climate.const import HVACMode
 
 from ..const import (
+    CONF_AUX_HOUSE_SWITCH,
     CONF_COOL_RELEASE_SWITCH,
     CONF_FAN_SELECT,
     CONF_FUNCTION_SELECT,
@@ -56,6 +57,20 @@ def central_writes(decision: SystemDecision, config: dict[str, Any]) -> list[Wri
         )
 
     return writes
+
+
+def house_writes(decision: SystemDecision, config: dict[str, Any]) -> list[Write]:
+    """The house-wide release of the auxiliary heaters, register 234.
+
+    Kept apart from the other central writes because its place in a bundle
+    depends on its value: on before the rooms are released, off only once they
+    have been withdrawn, so the unit never sees a room released under a house
+    that is not.
+    """
+    entity = config.get(CONF_AUX_HOUSE_SWITCH)
+    if decision.auxiliary_heat_house is None or not entity:
+        return []
+    return [switch_write("auxiliary_heat_house", entity, decision.auxiliary_heat_house)]
 
 
 def room_writes(room: RoomDecision, climate_entity: str) -> list[Write]:

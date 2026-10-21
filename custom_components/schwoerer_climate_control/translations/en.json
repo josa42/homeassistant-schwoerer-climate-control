@@ -12,6 +12,8 @@
           "function_select": "Heating and cooling function",
           "compressor_sensor": "Heat pump status",
           "operation_mode_select": "Operating mode",
+          "aux_house_switch": "Auxiliary heating, whole house",
+          "supply_air_sensor": "Supply air temperature (T4)",
           "forecast_entity": "Weather forecast",
           "notify_service": "Notification entity",
           "notify_every_change": "Notify every change",
@@ -25,6 +27,8 @@
         "data_description": {
           "operation_mode_select": "Only read, never written. The decisions assume the unit is in manual mode, and a repair is raised when it is not.",
           "compressor_sensor": "Used to decide whether a release may be changed: while the compressor is standing still it may change freely.",
+          "aux_house_switch": "Optional. Register 234. Switched on while any room may run its auxiliary heater, and off once none may.",
+          "supply_air_sensor": "Optional. The air handed to the rooms, after the reheater. A room whose supply air arrives well above it is left to the heat pump rather than given its auxiliary heater.",
           "forecast_entity": "Optional. Lets a cold morning under a warm forecast skip the heat pump.",
           "notify_service": "Optional, for example your phone from the Companion app. Messages are gathered for five minutes.",
           "notify_every_change": "Debugging aid. Sends a message for every change of a system or room decision, not only when a release turns over. Needs a notification entity.",
@@ -60,6 +64,8 @@
           "function_select": "Heating and cooling function",
           "compressor_sensor": "Heat pump status",
           "operation_mode_select": "Operating mode",
+          "aux_house_switch": "Auxiliary heating, whole house",
+          "supply_air_sensor": "Supply air temperature (T4)",
           "forecast_entity": "Weather forecast",
           "notify_service": "Notification entity",
           "notify_every_change": "Notify every change",
@@ -72,6 +78,8 @@
         "data_description": {
           "operation_mode_select": "Only read, never written. The decisions assume the unit is in manual mode, and a repair is raised when it is not.",
           "compressor_sensor": "Used to decide whether a release may be changed: while the compressor is standing still it may change freely.",
+          "aux_house_switch": "Optional. Register 234. Switched on while any room may run its auxiliary heater, and off once none may.",
+          "supply_air_sensor": "Optional. The air handed to the rooms, after the reheater. A room whose supply air arrives well above it is left to the heat pump rather than given its auxiliary heater.",
           "forecast_entity": "Optional. Lets a cold morning under a warm forecast skip the heat pump.",
           "notify_service": "Optional, for example your phone from the Companion app. Messages are gathered for five minutes.",
           "notify_every_change": "Debugging aid. Sends a message for every change of a system or room decision, not only when a release turns over. Needs a notification entity.",
@@ -99,6 +107,9 @@
           "release_hysteresis": "Release hysteresis",
           "forecast_blocks_above": "Forecast has a say above",
           "aux_heat_below": "Auxiliary heat below",
+          "aux_deficit": "Auxiliary heat from this far below target",
+          "aux_deficit_override": "Auxiliary heat regardless from this far below target",
+          "aux_supply_margin": "Supply air counts as heating above the room by",
           "cool_release_above": "Release cooling above",
           "fan_normal": "Fan level",
           "fan_night": "Fan level at night",
@@ -143,13 +154,19 @@
             "night_start": "Night starts",
             "night_end": "Night ends",
             "aux_heat_below": "Auxiliary heat below",
+            "aux_deficit": "Auxiliary heat from this far below target",
+            "aux_deficit_override": "Auxiliary heat regardless from this far below target",
+            "aux_supply_margin": "Supply air counts as heating above the room by",
             "humidity_high": "Humidity is high above",
             "co2_high": "CO₂ is high above"
           },
           "data_description": {
             "temperature_sensor": "Optional. Left empty, the thermostat's own reading is used.",
             "contacts": "Optional, any number. A contact that cannot be read counts as open.",
-            "aux_heat_off_at_night": "For a bedroom, where the second stage is not wanted while anyone is asleep."
+            "aux_heat_off_at_night": "For a bedroom, where the second stage is not wanted while anyone is asleep.",
+            "aux_deficit": "Optional. How far below its target the room has to be before its auxiliary heater is considered.",
+            "aux_deficit_override": "Optional. From this far below its target the supply air no longer gets a say.",
+            "aux_supply_margin": "Optional. While the supply air is at least this much warmer than the room, the heat pump is left to warm it."
           }
         },
         "reconfigure": {
@@ -173,13 +190,19 @@
             "night_start": "Night starts",
             "night_end": "Night ends",
             "aux_heat_below": "Auxiliary heat below",
+            "aux_deficit": "Auxiliary heat from this far below target",
+            "aux_deficit_override": "Auxiliary heat regardless from this far below target",
+            "aux_supply_margin": "Supply air counts as heating above the room by",
             "humidity_high": "Humidity is high above",
             "co2_high": "CO₂ is high above"
           },
           "data_description": {
             "temperature_sensor": "Optional. Left empty, the thermostat's own reading is used.",
             "contacts": "Optional, any number. A contact that cannot be read counts as open.",
-            "aux_heat_off_at_night": "For a bedroom, where the second stage is not wanted while anyone is asleep."
+            "aux_heat_off_at_night": "For a bedroom, where the second stage is not wanted while anyone is asleep.",
+            "aux_deficit": "Optional. How far below its target the room has to be before its auxiliary heater is considered.",
+            "aux_deficit_override": "Optional. From this far below its target the supply air no longer gets a say.",
+            "aux_supply_margin": "Optional. While the supply air is at least this much warmer than the room, the heat pump is left to warm it."
           }
         }
       },

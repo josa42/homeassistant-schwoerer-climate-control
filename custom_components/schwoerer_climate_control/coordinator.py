@@ -25,6 +25,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 import voluptuous as vol
+from homeassistant.components.climate.const import HVACMode
 from homeassistant.config_entries import ConfigEntry, ConfigSubentry
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import Event, EventStateChangedData, HomeAssistant, callback
@@ -63,6 +64,7 @@ from .const import (
     CONF_NOTIFY_SERVICE,
     CONF_OPERATION_MODE_SELECT,
     CONF_OUTDOOR_SENSOR,
+    CONF_SUPPLY_AIR_SENSOR,
     CONF_SURPLUS_ENTITY,
     CONF_TEMPERATURE_SENSOR,
     CONTACT_DWELL,
@@ -317,6 +319,25 @@ class ClimateControlCoordinator(DataUpdateCoordinator[SystemDecision]):
         now = dt_util.utcnow()
         return Reading(value=value, updated_ago=now - state.last_updated)
 
+    def _auxiliary_enabled(self, room: RoomRuntime) -> Reading | None:
+        """Whether a room of the unit reports its auxiliary heater released.
+
+        Its thermostat's hvac mode is that release, so heat is on and fan only
+        is off. A room heated by anything else has no second stage to report.
+        """
+        if room.actuator is not ActuatorKind.WGT_ROOM:
+            return None
+        reading = self._state_reading(room.climate_entity)
+        if reading is None or reading.missing:
+            return Reading()
+        if str(reading.value) not in (HVACMode.HEAT, HVACMode.FAN_ONLY):
+            return Reading()
+        return Reading(
+            value=str(reading.value) == HVACMode.HEAT,
+            updated_ago=reading.updated_ago,
+            stable_for=reading.stable_for,
+        )
+
     async def _forecast_max(self) -> Reading | None:
         """Today's forecast high, or None when no weather entity is configured.
 
@@ -363,6 +384,7 @@ class ClimateControlCoordinator(DataUpdateCoordinator[SystemDecision]):
                 humidity=self._number(room.config.get(CONF_HUMIDITY_SENSOR)),
                 co2=self._number(room.config.get(CONF_CO2_SENSOR)),
                 actuator=room.actuator,
+                auxiliary_enabled=self._auxiliary_enabled(room),
             )
             for room in self.rooms.values()
         )
@@ -370,6 +392,7 @@ class ClimateControlCoordinator(DataUpdateCoordinator[SystemDecision]):
             now=dt_util.now(),
             outdoor=self._number(config.get(CONF_OUTDOOR_SENSOR)) or Reading(),
             extract=self._number(config.get(CONF_EXTRACT_TEMPERATURE_SENSOR)),
+            supply_air=self._number(config.get(CONF_SUPPLY_AIR_SENSOR)),
             forecast_max=await self._forecast_max(),
             # Raw, because it may be an on/off entity or a number and the engine
             # decides which it is.
@@ -606,6 +629,9 @@ class ClimateControlCoordinator(DataUpdateCoordinator[SystemDecision]):
     def plan(self, decision: SystemDecision) -> list[Write]:
         """Every write that would carry this decision out, needed or not."""
         writes = schwoerer.central_writes(decision, self.hub_config)
+        house = schwoerer.house_writes(decision, self.hub_config)
+        if decision.auxiliary_heat_house:
+            writes.extend(house)
         by_id = {room.room_id: room for room in self.rooms.values()}
         for room_decision in decision.rooms:
             room = by_id.get(room_decision.room_id)
@@ -615,6 +641,8 @@ class ClimateControlCoordinator(DataUpdateCoordinator[SystemDecision]):
                 schwoerer if room.actuator is ActuatorKind.WGT_ROOM else generic
             )
             writes.extend(adapter.room_writes(room_decision, room.climate_entity))
+        if not decision.auxiliary_heat_house:
+            writes.extend(house)
         return writes
 
     def needs_write(self, write: Write) -> bool:

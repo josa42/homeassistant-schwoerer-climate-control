@@ -7,6 +7,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 
 from custom_components.schwoerer_climate_control.const import (
+    CONF_AUX_HOUSE_SWITCH,
     CONF_CLIMATE_ENTITY,
     CONF_DRY_RUN,
     CONF_FAN_SELECT,
@@ -98,6 +99,23 @@ async def test_discovery_finds_the_unit(hass: HomeAssistant) -> None:
     found = discover_unit(hass)
     assert found[CONF_OUTDOOR_SENSOR] == "sensor.wgt_outdoor"
     assert found[CONF_FAN_SELECT] == "select.wgt_fan"
+
+
+async def test_discovery_finds_the_house_auxiliary_heating_release(
+    hass: HomeAssistant,
+) -> None:
+    # The rooms publish the same entity_type for their own release, as a
+    # switch and as a binary sensor; only the one without a room is the house.
+    for room in (1, 2):
+        hass.states.async_set(
+            f"switch.room_{room}_aux",
+            "off",
+            {"entity_type": "auxiliary_heating_enabled", "room_number": room},
+        )
+    hass.states.async_set(
+        "switch.wgt_aux_house", "on", {"entity_type": "auxiliary_heating_enabled"}
+    )
+    assert discover_unit(hass)[CONF_AUX_HOUSE_SWITCH] == "switch.wgt_aux_house"
 
 
 async def test_discovery_skips_a_rooms_copy_of_an_entity(hass: HomeAssistant) -> None:

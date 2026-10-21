@@ -72,8 +72,7 @@ async def test_an_unchanged_decision_says_nothing_again(
 async def test_a_room_change_hangs_off_the_rooms_own_sensor(
     hass: HomeAssistant, start, events
 ) -> None:
-    # Heating turns the room from idle into one with a setpoint it means, and
-    # with its auxiliary heater running.
+    # Heating turns the room from idle into one with a setpoint it means.
     coordinator, _ = await start()
     await coordinator.async_set_mode(Mode.HEATING)
     await coordinator.async_refresh()

@@ -18,6 +18,7 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 
 from .const import (
+    CONF_AUX_HOUSE_SWITCH,
     CONF_BYPASS_SENSOR,
     CONF_COMPRESSOR_SENSOR,
     CONF_COOL_RELEASE_SWITCH,
@@ -27,6 +28,7 @@ from .const import (
     CONF_HEAT_RELEASE_SWITCH,
     CONF_OPERATION_MODE_SELECT,
     CONF_OUTDOOR_SENSOR,
+    CONF_SUPPLY_AIR_SENSOR,
     CONF_SUPPLY_TEMPERATURE_SENSOR,
 )
 
@@ -40,6 +42,10 @@ UNIT_ENTITY_TYPES: dict[str, str] = {
     CONF_HEAT_RELEASE_SWITCH: "heat_pump_heating_enabled",
     CONF_COOL_RELEASE_SWITCH: "heat_pump_cooling_enabled",
     CONF_COMPRESSOR_SENSOR: "heat_pump_status",
+    # The rooms carry a switch and a binary sensor of the same name, which the
+    # room number tells apart.
+    CONF_AUX_HOUSE_SWITCH: "auxiliary_heating_enabled",
+    CONF_SUPPLY_AIR_SENSOR: "temperature_t4_after_reheater",
     CONF_SUPPLY_TEMPERATURE_SENSOR: "temperature_t3_before_reheater",
     CONF_EXTRACT_TEMPERATURE_SENSOR: "temperature_t5_exhaust_air",
     CONF_BYPASS_SENSOR: "bypass_state",

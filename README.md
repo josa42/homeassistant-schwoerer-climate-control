@@ -94,6 +94,37 @@ the air leaving the house, ventilating imports heat, so the fan is capped, and i
 a heat wave it stops. Ventilating against indoor humidity with 39 °C air makes the
 humidity worse rather than better, because the warmer air carries far more water.
 
+### The auxiliary heaters
+
+A room's auxiliary heater is the expensive second stage, so it is only released
+when the heat pump cannot get the room warm on its own. All of this has to hold:
+
+- the mode is heating and the heat pump is released,
+- it is colder outside than *auxiliary heat below* (10 °C),
+- the window is shut, and it is not night in a room that has the heater off at
+  night,
+- the room is at least *auxiliary heat from this far below target* (0.5 K) short
+  of its setpoint,
+- and the supply air arrives less than *supply air counts as heating* (5 K) above
+  the room. Supply air well above the room is the heat pump bringing the heat
+  already, and the room is left to catch up.
+
+From *auxiliary heat regardless* (2 K) short the supply air no longer gets a say.
+Without a supply air reading the room decides alone.
+
+A heater is only switched on once it has been wanted for 15 minutes, so a door
+left open for a minute or the supply air dipping while the heat pump defrosts
+does not start it. Once it runs it holds until the room reaches its setpoint or
+the supply air clears the margin by a further kelvin.
+
+The house-wide release, register 234, follows the rooms: on while any room may
+run its heater, off once none may. It goes on before the rooms are released and
+off only after they have been withdrawn. A setup without the entity configured
+leaves the register alone.
+
+The three thresholds are first estimates, see
+[docs/todos/aux-heat-thresholds.md](docs/todos/aux-heat-thresholds.md).
+
 Cooling with the compressor only runs while there is energy to spare. It is the
 one expensive thing here, and it waits for a surplus rather than for demand. What
 counts as spare is yours to define: give it an on/off entity and it is taken at
