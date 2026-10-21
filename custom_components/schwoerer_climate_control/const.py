@@ -242,6 +242,9 @@ CONF_SUPPLY_AIR_SENSOR = "supply_air_sensor"
 #: Read, never written. The decisions assume the unit is in manual, and a repair
 #: says so when it is not.
 CONF_OPERATION_MODE_SELECT = "operation_mode_select"
+#: The discoverable entities a saved form went without. Discovery leaves them
+#: alone, so that one cleared on purpose is not suggested back.
+CONF_DECLINED_ENTITIES = "declined_entities"
 
 # The bypass, which can only be observed. Optional, and all three are needed
 # before anything can be said about it.

@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from homeassistant.config_entries import SOURCE_USER
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.schwoerer_climate_control.const import (
     CONF_AUX_HOUSE_SWITCH,
@@ -165,6 +168,73 @@ async def test_an_optional_field_can_be_cleared_again(
 
     assert "pv_sensor" not in result["data"], "a cleared field has to stay cleared"
     assert result["data"][CONF_TARGET_NORMAL] == 21.0, "the other step survives"
+
+
+def suggested(result: dict[str, Any], key: str) -> Any:
+    """What a form pre-fills a field with, if anything."""
+    for marker in result["data_schema"].schema:
+        if marker == key:
+            return (marker.description or {}).get("suggested_value")
+    raise KeyError(key)
+
+
+async def open_entities(hass: HomeAssistant, entry) -> dict[str, Any]:
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    return await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "entities"}
+    )
+
+
+AUX_HOUSE = "switch.wgt_aux_house"
+
+
+async def test_an_entity_new_to_the_unit_is_suggested_after_setup(
+    hass: HomeAssistant, entry, unit, setup_entry
+) -> None:
+    unit()
+    hass.states.async_set(AUX_HOUSE, "off", {"entity_type": "auxiliary_heating_enabled"})
+    await setup_entry(entry)
+
+    result = await open_entities(hass, entry)
+    assert suggested(result, CONF_AUX_HOUSE_SWITCH) == AUX_HOUSE
+
+
+async def test_a_declined_entity_is_not_suggested_again(
+    hass: HomeAssistant, entry, unit, setup_entry
+) -> None:
+    # Saving the form without the suggestion is an answer. Suggesting it again
+    # would have it saved back the first time the form is used for anything else.
+    unit()
+    hass.states.async_set(AUX_HOUSE, "off", {"entity_type": "auxiliary_heating_enabled"})
+    await setup_entry(entry)
+
+    result = await open_entities(hass, entry)
+    await hass.config_entries.options.async_configure(result["flow_id"], HUB_DATA)
+
+    result = await open_entities(hass, entry)
+    assert suggested(result, CONF_AUX_HOUSE_SWITCH) is None
+
+
+async def test_an_entity_chosen_at_setup_can_be_cleared(
+    hass: HomeAssistant, unit, setup_entry
+) -> None:
+    # Setup stores into the entry's data and the options flow into its options.
+    # Options are laid over data, so a field cleared in the options has to be
+    # gone from the data as well, or the setup value shows through.
+    unit()
+    hass.states.async_set(AUX_HOUSE, "off", {"entity_type": "auxiliary_heating_enabled"})
+    entry = MockConfigEntry(
+        domain=DOMAIN, data={**HUB_DATA, CONF_AUX_HOUSE_SWITCH: AUX_HOUSE}
+    )
+    entry.add_to_hass(hass)
+    await setup_entry(entry)
+
+    result = await open_entities(hass, entry)
+    await hass.config_entries.options.async_configure(result["flow_id"], HUB_DATA)
+
+    assert CONF_AUX_HOUSE_SWITCH not in {**entry.data, **entry.options}
+    result = await open_entities(hass, entry)
+    assert suggested(result, CONF_AUX_HOUSE_SWITCH) is None
 
 
 async def test_a_room_is_named_after_the_room_and_not_the_thermostat(

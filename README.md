@@ -121,7 +121,9 @@ the supply air clears the margin by a further kelvin.
 The house-wide release, register 234, follows the rooms: on while any room may
 run its heater, off once none may. It goes on before the rooms are released and
 off only after they have been withdrawn. A setup without the entity configured
-leaves the register alone.
+leaves the register alone. An existing setup finds it suggested under
+**Configure** → **Entities**; an entity cleared there stays cleared and is not
+suggested again.
 
 The three thresholds are first estimates, see
 [docs/todos/aux-heat-thresholds.md](docs/todos/aux-heat-thresholds.md).

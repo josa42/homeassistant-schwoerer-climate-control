@@ -19,6 +19,12 @@
   on the way out. Three new thresholds, each overridable per room. Without a
   supply air sensor the room decides alone.
 
+### Fixed
+
+- **An entity chosen at setup can be cleared under *Entities*.** Clearing it
+  used to leave the setup value in force. An entity cleared there is also not
+  suggested again.
+
 ## 1.0.0 - 2026-10-03
 
 ### Added

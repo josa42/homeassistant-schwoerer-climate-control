@@ -44,6 +44,7 @@ from .const import (
     CONF_CONTACTS,
     CONF_COOL_RELEASE_ABOVE,
     CONF_COOL_RELEASE_SWITCH,
+    CONF_DECLINED_ENTITIES,
     CONF_DRY_RUN,
     CONF_EXTRACT_TEMPERATURE_SENSOR,
     CONF_FAN_AIR_QUALITY,
@@ -94,7 +95,12 @@ from .const import (
     TARGET_MIN,
     ActuatorKind,
 )
-from .discovery import DiscoveredRoom, discover_rooms, discover_unit
+from .discovery import (
+    UNIT_ENTITY_TYPES,
+    DiscoveredRoom,
+    discover_rooms,
+    discover_unit,
+)
 
 TITLE = "Schwörer Climate Control"
 
@@ -387,6 +393,13 @@ def _replace(
     return {**kept, **_prune(user_input)}
 
 
+def _with_declined(data: Mapping[str, Any]) -> dict[str, Any]:
+    """Note which discoverable entities the saved form went without."""
+    declined = sorted(key for key in UNIT_ENTITY_TYPES if key not in data)
+    data = {key: value for key, value in data.items() if key != CONF_DECLINED_ENTITIES}
+    return {**data, CONF_DECLINED_ENTITIES: declined} if declined else data
+
+
 class ClimateControlConfigFlow(ConfigFlow, domain=DOMAIN):
     """Set the unit up once."""
 
@@ -402,6 +415,7 @@ class ClimateControlConfigFlow(ConfigFlow, domain=DOMAIN):
             data = _prune(user_input)
             # Asked, not stored: it describes this one moment, not the setup.
             add_rooms = data.pop(CONF_ADD_ROOMS, False)
+            data = _with_declined(data)
             return self.async_create_entry(
                 title=TITLE,
                 data=data,
@@ -440,14 +454,35 @@ class ClimateControlOptionsFlow(OptionsFlow):
     async def async_step_entities(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
+        keys = (*UNIT_KEYS, CONF_DECLINED_ENTITIES)
         if user_input is not None:
-            return self.async_create_entry(
-                data=_replace(self.config_entry.options, user_input, UNIT_KEYS)
+            options = _with_declined(
+                _replace(self.config_entry.options, user_input, keys)
             )
+            # Setup stored these in the data, and options are laid over it. Left
+            # there, a field cleared here would show the setup value through.
+            data = {
+                key: value
+                for key, value in self.config_entry.data.items()
+                if key not in keys
+            }
+            # One update, so the entry reloads once; creating the entry below
+            # then finds the options already in place.
+            self.hass.config_entries.async_update_entry(
+                self.config_entry, data=data, options=options
+            )
+            return self.async_create_entry(data=options)
         current = {**self.config_entry.data, **self.config_entry.options}
-        # Discovery fills in only what was never set, so an entity added to the
-        # controller after setup is suggested without touching anything chosen.
-        suggested = {**discover_unit(self.hass), **current}
+        # Discovery fills in only what was never answered, so an entity added to
+        # the controller after setup is suggested without touching anything
+        # chosen or cleared.
+        declined = set(current.get(CONF_DECLINED_ENTITIES, ()))
+        discovered = {
+            key: value
+            for key, value in discover_unit(self.hass).items()
+            if key not in declined
+        }
+        suggested = {**discovered, **current}
         return self.async_show_form(
             step_id="entities", data_schema=unit_schema(suggested)
         )
