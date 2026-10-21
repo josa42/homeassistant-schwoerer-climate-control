@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from typing import Any
 
 import pytest
+from freezegun import freeze_time
 from homeassistant.config_entries import ConfigSubentryData
 from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -62,6 +64,19 @@ ROOM_DATA: dict[str, Any] = {
 def auto_enable_custom_integrations(enable_custom_integrations):
     """Make the custom integration loadable in every test."""
     return
+
+
+@pytest.fixture(autouse=True)
+def midday() -> Iterator[None]:
+    """Start the clock at a winter noon in the test time zone (US/Pacific).
+
+    The controller reads the wall clock for the night window, so a suite run in
+    the evening found every room in its setback. The clock keeps ticking, since
+    a frozen one stalls the event loop. A test that needs another time moves
+    the clock itself.
+    """
+    with freeze_time("2026-01-15 12:00:00-08:00", tick=True):
+        yield
 
 
 @pytest.fixture(autouse=True)
