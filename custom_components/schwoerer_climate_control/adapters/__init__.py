@@ -46,6 +46,9 @@ class Write:
     #: Numbers are compared with a tolerance, because a device that stores a
     #: tenth never reports back the float that was sent.
     tolerance: float = 0.0
+    #: Which decision this carries out: "system", or the room it belongs to.
+    #: The write is sent under the context of that decision's logbook entry.
+    origin: str = "system"
 
     @property
     def service_data(self) -> dict[str, Any]:

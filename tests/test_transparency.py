@@ -23,7 +23,7 @@ from custom_components.schwoerer_climate_control.diagnostics import (
     async_get_config_entry_diagnostics,
 )
 
-from .conftest import FAN, HUB_DATA, OPERATION_MODE
+from .conftest import FAN, HEAT, HUB_DATA, OPERATION_MODE, THERMOSTAT
 
 
 @pytest.fixture
@@ -81,6 +81,22 @@ async def test_a_room_change_hangs_off_the_rooms_own_sensor(
     rooms = [event for event in events if event.data["key"] == "wohnzimmer"]
     assert rooms, "the room's own decision changed"
     assert rooms[-1].data["entity_id"] == "sensor.wohnzimmer_decision"
+
+
+async def test_a_write_is_sent_under_the_entry_of_the_decision_behind_it(
+    hass: HomeAssistant, start, events
+) -> None:
+    # The shared context is what makes the logbook name the controller, and its
+    # reason, as what triggered the change.
+    coordinator, calls = await start(target=14.0)
+    await coordinator.async_set_mode(Mode.HEATING)
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    contexts = {event.data["key"]: event.context.id for event in events}
+    written = {call.data["entity_id"]: call.context.id for call in calls}
+    assert written[HEAT] == contexts["system"]
+    assert written[THERMOSTAT] == contexts["wohnzimmer"]
 
 
 async def test_an_operating_mode_that_is_not_manual_is_a_repair(

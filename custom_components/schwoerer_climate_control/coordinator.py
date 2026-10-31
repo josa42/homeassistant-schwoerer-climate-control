@@ -20,7 +20,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -28,7 +28,13 @@ import voluptuous as vol
 from homeassistant.components.climate.const import HVACMode
 from homeassistant.config_entries import ConfigEntry, ConfigSubentry
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
-from homeassistant.core import Event, EventStateChangedData, HomeAssistant, callback
+from homeassistant.core import (
+    Context,
+    Event,
+    EventStateChangedData,
+    HomeAssistant,
+    callback,
+)
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import (
     device_registry as dr,
@@ -165,6 +171,10 @@ class ClimateControlCoordinator(DataUpdateCoordinator[SystemDecision]):
 
         self.history: deque[SystemDecision] = deque(maxlen=DECISION_HISTORY)
         self._signatures: dict[str, tuple] = {}
+        # The context of the latest logbook entry per decision, which the writes
+        # carrying that decision out are sent under. That is what makes the
+        # logbook say a change was triggered by the controller, and why.
+        self._contexts: dict[str, Context] = {}
         self._degraded_since: datetime | None = None
         self._pending: list[str] = []
         self._notify_scheduled = False
@@ -444,6 +454,9 @@ class ClimateControlCoordinator(DataUpdateCoordinator[SystemDecision]):
             fan_request=self.fan_request,
             holiday=self.holiday,
         )
+        # Logged before writing, so the entry exists as the origin of the context
+        # the writes are sent under.
+        self._log_changes(decision)
         await self._apply(decision)
         self._record(decision)
         return decision
@@ -452,9 +465,8 @@ class ClimateControlCoordinator(DataUpdateCoordinator[SystemDecision]):
     # Writing down what changed
 
     def _record(self, decision: SystemDecision) -> None:
-        """Keep the decision, log what changed, and raise what needs raising."""
+        """Keep the decision and raise what needs raising."""
         self.history.append(decision)
-        self._log_changes(decision)
         self._update_issues(decision)
 
     def _decision_entity_id(self, unique_id: str) -> str | None:
@@ -506,6 +518,8 @@ class ClimateControlCoordinator(DataUpdateCoordinator[SystemDecision]):
             # Nothing to say on the first pass, and nothing to say when nothing
             # changed. A setpoint that drifts by a tenth is not an entry.
             return False
+        context = Context()
+        self._contexts[key] = context
         self.hass.bus.async_fire(
             EVENT_DECISION,
             {
@@ -514,6 +528,7 @@ class ClimateControlCoordinator(DataUpdateCoordinator[SystemDecision]):
                 "entity_id": entity_id,
                 "key": key,
             },
+            context=context,
         )
         return True
 
@@ -640,7 +655,10 @@ class ClimateControlCoordinator(DataUpdateCoordinator[SystemDecision]):
             adapter = (
                 schwoerer if room.actuator is ActuatorKind.WGT_ROOM else generic
             )
-            writes.extend(adapter.room_writes(room_decision, room.climate_entity))
+            writes.extend(
+                replace(write, origin=room.room_id)
+                for write in adapter.room_writes(room_decision, room.climate_entity)
+            )
         if not decision.auxiliary_heat_house:
             writes.extend(house)
         return writes
@@ -728,10 +746,23 @@ class ClimateControlCoordinator(DataUpdateCoordinator[SystemDecision]):
             )
             try:
                 await self.hass.services.async_call(
-                    write.domain, write.service, write.service_data, blocking=True
+                    write.domain,
+                    write.service,
+                    write.service_data,
+                    blocking=True,
+                    context=self._context_for(write),
                 )
             except Exception as err:  # noqa: BLE001 - one bad write is not the lot
                 _LOGGER.warning("Failed to set %s: %s", write.label, err)
+
+    def _context_for(self, write: Write) -> Context:
+        """The context of the decision this write carries out.
+
+        A write with no logbook entry behind it, such as the first one after a
+        restart, gets a context of its own, which still marks it as not made by
+        a person.
+        """
+        return self._contexts.get(write.origin) or Context()
 
     def _count_stuck(self, needed: list[Write]) -> None:
         """Count registers that were written and still do not read back.

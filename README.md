@@ -183,6 +183,11 @@ so every change also writes a logbook entry carrying the same sentence, per room
 and for the unit. A setpoint drifting by a tenth is not a change and does not
 appear.
 
+The writes that carry a decision out are sent under the context of its logbook
+entry. A changed setpoint or release switch therefore shows the controller, and
+its sentence, as what triggered the change, in the logbook and in the entity's
+activity.
+
 The **diagnostics** download has the full trace, plus the writes the controller
 would send right now and whether each is needed, which is the answer to "it
 decided that, so why has nothing happened".

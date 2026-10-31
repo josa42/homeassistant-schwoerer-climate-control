@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Changes name the controller as their trigger.** A setpoint, release switch
+  or fan level the controller sets now shows "triggered by" with the decision's
+  name and sentence, in the logbook and in the entity's activity. A write with
+  no logbook entry behind it, such as the first one after a restart, still
+  shows none.
+
 ## 1.1.0 - 2026-10-22
 
 ### Added
