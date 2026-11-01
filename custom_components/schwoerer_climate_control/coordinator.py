@@ -175,6 +175,9 @@ class ClimateControlCoordinator(DataUpdateCoordinator[SystemDecision]):
         # carrying that decision out are sent under. That is what makes the
         # logbook say a change was triggered by the controller, and why.
         self._contexts: dict[str, Context] = {}
+        # The current name, sentence and sensor per decision, so a write with no
+        # entry behind it yet can be given one.
+        self._latest: dict[str, tuple[str, str, str | None]] = {}
         self._degraded_since: datetime | None = None
         self._pending: list[str] = []
         self._notify_scheduled = False
@@ -514,6 +517,7 @@ class ClimateControlCoordinator(DataUpdateCoordinator[SystemDecision]):
         """Fire a logbook entry if the decision changed, and say whether it did."""
         previous = self._signatures.get(key)
         self._signatures[key] = signature
+        self._latest[key] = (name, message, entity_id)
         if previous is None or previous == signature:
             # Nothing to say on the first pass, and nothing to say when nothing
             # changed. A setpoint that drifts by a tenth is not an entry.
@@ -765,11 +769,18 @@ class ClimateControlCoordinator(DataUpdateCoordinator[SystemDecision]):
     def _context_for(self, write: Write) -> Context:
         """The context of the decision this write carries out.
 
-        A write with no logbook entry behind it, such as the first one after a
-        restart, gets a context of its own, which still marks it as not made by
-        a person.
+        A decision with no logbook entry yet gets one now, marked as restored:
+        the first write after a restart, or one putting back a value changed by
+        hand, carries out a decision that has not changed since startup. Doing
+        it here rather than on every pass keeps a restart that writes nothing
+        out of the logbook.
         """
-        return self._contexts.get(write.origin) or Context()
+        if context := self._contexts.get(write.origin):
+            return context
+        if latest := self._latest.get(write.origin):
+            name, message, entity_id = latest
+            return self._fire(write.origin, name, f"Restored: {message}", entity_id)
+        return Context()
 
     def _count_stuck(self, needed: list[Write]) -> None:
         """Count registers that were written and still do not read back.
