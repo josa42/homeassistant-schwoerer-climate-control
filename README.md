@@ -207,9 +207,15 @@ to ventilation, and a dead humidity or CO₂ sensor only takes its own rule out.
 v1 skipped all of these silently, which is how a flat battery turned into a room
 that was heated against an open window.
 
-Three things raise a repair: the unit left manual mode, a configured input has
-been unreadable for an hour, and a register will not take its value. An input that
-misses a single poll is not a repair.
+Four things raise a repair: the unit left manual mode, a configured input has
+been unreadable for an hour, a register will not take its value, and the
+entities form suggests an entity that was never saved. An input that misses a
+single poll is not a repair.
+
+The last one exists because a suggestion looks exactly like a saved value. The
+form shows the discovered entity filled in, while the controller works without
+it until the form is submitted once. Clearing the field there declines it, and
+the repair does not come back for it.
 
 Notifications go to one notify entity, such as your phone from the Companion
 app, and gather for five minutes. A legacy notify service like

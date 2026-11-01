@@ -296,6 +296,10 @@
     "stuck_write": {
       "title": "Ein Wert wird nicht übernommen",
       "description": "Diese wurden mehrfach geschrieben und lesen sich trotzdem nicht zurück: {writes}. Der Write wird bei jeder Auswertung wiederholt, das liegt also am Gerät oder an der Verbindung und nicht am Controller."
+    },
+    "unsaved_suggestion": {
+      "title": "Vorgeschlagene Entitäten sind nicht gespeichert",
+      "description": "Das Formular für die Entitäten bietet diese an, die Konfiguration enthält sie aber noch nicht: {entities}. Bis dahin arbeitet der Controller ohne sie. Öffne Konfigurieren, dann Entitäten, und speichere das Formular einmal. Ein Feld, das du dort leerst, wird nicht mehr vorgeschlagen."
     }
   }
 }

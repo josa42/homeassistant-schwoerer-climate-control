@@ -86,6 +86,7 @@ DECISION_HISTORY = 50
 ISSUE_OPERATION_MODE = "operation_mode"
 ISSUE_INPUT_UNAVAILABLE = "input_unavailable"
 ISSUE_STUCK_WRITE = "stuck_write"
+ISSUE_UNSAVED_SUGGESTION = "unsaved_suggestion"
 
 #: How many evaluations in a row a register may fail to take its value before
 #: it is reported. Diffing against what the device reports means a dropped

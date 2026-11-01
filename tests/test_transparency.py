@@ -11,11 +11,14 @@ from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import async_fire_time_changed
 
 from custom_components.schwoerer_climate_control.const import (
+    CONF_DECLINED_ENTITIES,
+    CONF_SUPPLY_AIR_SENSOR,
     DOMAIN,
     EVENT_DECISION,
     ISSUE_INPUT_UNAVAILABLE,
     ISSUE_OPERATION_MODE,
     ISSUE_STUCK_WRITE,
+    ISSUE_UNSAVED_SUGGESTION,
     STUCK_AFTER,
     Mode,
 )
@@ -220,6 +223,63 @@ async def test_a_write_that_never_takes_is_a_repair(
     issue = ir.async_get(hass).async_get_issue(DOMAIN, ISSUE_STUCK_WRITE)
     assert issue is not None
     assert "fan_level" in issue.translation_placeholders["writes"]
+
+
+SUPPLY_AIR = "sensor.wgt_t4"
+
+
+def discoverable_supply_air(hass: HomeAssistant) -> None:
+    """A supply air sensor the entities form would suggest."""
+    hass.states.async_set(
+        SUPPLY_AIR, "45.0", {"entity_type": "temperature_t4_after_reheater"}
+    )
+
+
+async def test_a_suggestion_the_form_never_saved_is_a_repair(
+    hass: HomeAssistant, start
+) -> None:
+    # The form shows it filled in, so nothing else would say it is missing.
+    discoverable_supply_air(hass)
+    coordinator, _ = await start()
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    issue = ir.async_get(hass).async_get_issue(DOMAIN, ISSUE_UNSAVED_SUGGESTION)
+    assert issue is not None
+    assert issue.translation_placeholders == {"entities": SUPPLY_AIR}
+
+
+async def test_the_repair_clears_once_the_suggestion_is_saved(
+    hass: HomeAssistant, entry, start
+) -> None:
+    discoverable_supply_air(hass)
+    coordinator, _ = await start()
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+    assert ir.async_get(hass).async_get_issue(DOMAIN, ISSUE_UNSAVED_SUGGESTION)
+
+    hass.config_entries.async_update_entry(
+        entry, options={CONF_SUPPLY_AIR_SENSOR: SUPPLY_AIR}
+    )
+    await hass.async_block_till_done()
+    await entry.runtime_data.async_refresh()
+    await hass.async_block_till_done()
+
+    assert ir.async_get(hass).async_get_issue(DOMAIN, ISSUE_UNSAVED_SUGGESTION) is None
+
+
+async def test_a_declined_suggestion_is_not_a_repair(
+    hass: HomeAssistant, entry, start
+) -> None:
+    hass.config_entries.async_update_entry(
+        entry, options={CONF_DECLINED_ENTITIES: [CONF_SUPPLY_AIR_SENSOR]}
+    )
+    discoverable_supply_air(hass)
+    coordinator, _ = await start()
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    assert ir.async_get(hass).async_get_issue(DOMAIN, ISSUE_UNSAVED_SUGGESTION) is None
 
 
 async def test_a_release_change_is_notified_once_the_window_closes(

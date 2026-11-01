@@ -60,6 +60,7 @@ from .const import (
     CONF_COMPRESSOR_SENSOR,
     CONF_CONTACTS,
     CONF_COOL_RELEASE_SWITCH,
+    CONF_DECLINED_ENTITIES,
     CONF_DRY_RUN,
     CONF_EXTRACT_TEMPERATURE_SENSOR,
     CONF_FORECAST_ENTITY,
@@ -82,6 +83,7 @@ from .const import (
     ISSUE_INPUT_UNAVAILABLE,
     ISSUE_OPERATION_MODE,
     ISSUE_STUCK_WRITE,
+    ISSUE_UNSAVED_SUGGESTION,
     MIN_WRITE_INTERVAL,
     NOTIFY_WINDOW,
     STUCK_AFTER,
@@ -93,6 +95,7 @@ from .const import (
     Mode,
     Reason,
 )
+from .discovery import discover_unit
 from .engine import EngineState, Inputs, RoomInputs, evaluate
 from .models import Reading, SystemDecision
 
@@ -607,7 +610,7 @@ class ClimateControlCoordinator(DataUpdateCoordinator[SystemDecision]):
     # Repairs
 
     def _update_issues(self, decision: SystemDecision) -> None:
-        """Raise and clear the three things worth a repair entry."""
+        """Raise and clear the four things worth a repair entry."""
         self._issue(
             ISSUE_OPERATION_MODE,
             self.operation_mode not in (None, REQUIRED_OPERATION_MODE),
@@ -631,6 +634,28 @@ class ClimateControlCoordinator(DataUpdateCoordinator[SystemDecision]):
             ISSUE_STUCK_WRITE,
             bool(self.stuck_writes),
             {"writes": ", ".join(self.stuck_writes)},
+        )
+
+        unsaved = self._unsaved_suggestions()
+        self._issue(
+            ISSUE_UNSAVED_SUGGESTION,
+            bool(unsaved),
+            {"entities": ", ".join(unsaved)},
+        )
+
+    def _unsaved_suggestions(self) -> list[str]:
+        """Entities the entities form offers but the configuration does not hold.
+
+        The form pre-fills them, so it looks set up while the controller works
+        without them. Saving the form once stores them, and clearing a field
+        there declines it for good.
+        """
+        config = self.hub_config
+        declined = set(config.get(CONF_DECLINED_ENTITIES, ()))
+        return sorted(
+            entity_id
+            for key, entity_id in discover_unit(self.hass).items()
+            if key not in config and key not in declined
         )
 
     def _issue(

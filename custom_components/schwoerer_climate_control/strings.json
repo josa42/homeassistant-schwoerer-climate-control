@@ -296,6 +296,10 @@
     "stuck_write": {
       "title": "A value is not being accepted",
       "description": "These were written repeatedly and still do not read back: {writes}. The write is retried on every evaluation, so this is the device or the connection rather than the controller."
+    },
+    "unsaved_suggestion": {
+      "title": "Suggested entities are not saved",
+      "description": "The entities form offers these, but the configuration does not hold them yet: {entities}. Until it does, the controller works without them. Open Configure, then Entities, and save the form once. A field you clear there is not suggested again."
     }
   }
 }
