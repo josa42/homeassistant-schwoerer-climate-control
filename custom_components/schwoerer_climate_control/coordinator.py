@@ -518,6 +518,13 @@ class ClimateControlCoordinator(DataUpdateCoordinator[SystemDecision]):
             # Nothing to say on the first pass, and nothing to say when nothing
             # changed. A setpoint that drifts by a tenth is not an entry.
             return False
+        self._fire(key, name, message, entity_id)
+        return True
+
+    def _fire(
+        self, key: str, name: str, message: str, entity_id: str | None
+    ) -> Context:
+        """Fire the logbook entry of a decision and keep its context."""
         context = Context()
         self._contexts[key] = context
         self.hass.bus.async_fire(
@@ -530,7 +537,7 @@ class ClimateControlCoordinator(DataUpdateCoordinator[SystemDecision]):
             },
             context=context,
         )
-        return True
+        return context
 
     def _notable(self, decision: SystemDecision, previous: tuple | None) -> bool:
         """Whether a person should be told, as opposed to it being logged.
