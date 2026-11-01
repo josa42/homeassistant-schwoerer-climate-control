@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Added
+
+- **A repair names suggested entities that were never saved.** The entities
+  form fills in discovered entities, while the controller works without them
+  until the form is submitted once. A repair now points this out. Clearing the
+  field declines the suggestion, and the repair does not come back for it.
+
 ### Fixed
 
 - **Writes after a restart name the controller as their trigger.** The first
