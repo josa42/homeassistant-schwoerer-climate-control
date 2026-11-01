@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **Writes after a restart name the controller as their trigger.** The first
+  write after a restart, and one putting back a value changed by hand, now log
+  the decision behind them as "Restored: " followed by its sentence and show it
+  as "triggered by". A restart that writes nothing logs nothing.
+
 ## 1.2.0 - 2026-10-31
 
 ### Added

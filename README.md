@@ -188,6 +188,13 @@ entry. A changed setpoint or release switch therefore shows the controller, and
 its sentence, as what triggered the change, in the logbook and in the entity's
 activity.
 
+A decision that has not changed since Home Assistant started has no entry yet.
+When the controller writes for it, for example the first write after a restart
+or putting back a setpoint someone changed by hand, it first logs the decision
+as "Restored: " followed by its sentence, so these writes name the controller
+too. A restart that writes nothing logs nothing, and these entries send no
+notification.
+
 The **diagnostics** download has the full trace, plus the writes the controller
 would send right now and whether each is needed, which is the answer to "it
 decided that, so why has nothing happened".

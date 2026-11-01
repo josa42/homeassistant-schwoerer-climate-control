@@ -97,6 +97,65 @@ async def test_a_write_is_sent_under_the_entry_of_the_decision_behind_it(
     written = {call.data["entity_id"]: call.context.id for call in calls}
     assert written[HEAT] == contexts["system"]
     assert written[THERMOSTAT] == contexts["wohnzimmer"]
+    assert not any(e.data["message"].startswith("Restored: ") for e in events)
+
+
+async def test_the_first_write_after_a_restart_names_the_controller(
+    hass: HomeAssistant, start, events
+) -> None:
+    # The decision has not changed since startup, so it has no entry yet. It
+    # gets one when it is carried out, and the write is sent under it.
+    coordinator, calls = await start(fan="4")
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    assert [event.data["key"] for event in events] == ["system"]
+    assert events[0].data["message"].startswith("Restored: ")
+    assert calls[0].data["entity_id"] == FAN
+    assert calls[0].context.id == events[0].context.id
+
+
+async def test_a_room_changed_by_hand_is_put_back_under_a_restored_entry(
+    hass: HomeAssistant, start, unit, events
+) -> None:
+    coordinator, calls = await start()
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+    assert events == []
+
+    unit(target=14.0)
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    assert [event.data["key"] for event in events] == ["wohnzimmer"]
+    assert events[0].data["message"].startswith("Restored: ")
+    assert events[0].data["entity_id"] == "sensor.wohnzimmer_decision"
+    assert [call.data["entity_id"] for call in calls] == [THERMOSTAT]
+    assert calls[0].context.id == events[0].context.id
+
+
+async def test_one_restored_entry_covers_every_write_of_its_decision(
+    hass: HomeAssistant, start, events
+) -> None:
+    coordinator, calls = await start(fan="4", heat="on")
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    assert len(events) == 1
+    assert {call.data["entity_id"] for call in calls} == {FAN, HEAT}
+    assert {call.context.id for call in calls} == {events[0].context.id}
+
+
+async def test_a_dry_run_restores_nothing(
+    hass: HomeAssistant, start, events
+) -> None:
+    coordinator, calls = await start(fan="4")
+    await coordinator.async_set_dry_run(True)
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    assert events == []
+    assert calls == []
 
 
 async def test_an_operating_mode_that_is_not_manual_is_a_repair(
@@ -256,6 +315,35 @@ async def test_a_fan_level_change_is_not_worth_a_message(
     hass.states.async_set(FAN, "4")
     await coordinator.async_refresh()
     await hass.async_block_till_done()
+
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(minutes=6))
+    await hass.async_block_till_done()
+    assert sent == []
+
+
+async def test_a_restored_entry_is_not_worth_a_message(
+    hass: HomeAssistant, entry, unit, setup_entry, events
+) -> None:
+    hass.config_entries.async_update_entry(
+        entry,
+        data={
+            **HUB_DATA,
+            "notify_service": "notify.phone",
+            "notify_every_change": True,
+        },
+    )
+    sent: list = []
+
+    async def record(call) -> None:
+        sent.append(call)
+
+    hass.services.async_register("notify", "phone", record)
+
+    unit(fan="4")
+    coordinator = await setup_entry(entry)
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+    assert events, "the write was restored"
 
     async_fire_time_changed(hass, dt_util.utcnow() + timedelta(minutes=6))
     await hass.async_block_till_done()
