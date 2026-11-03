@@ -194,6 +194,8 @@ class FanReason(StrEnum):
     CO2_HIGH = "co2_high"
     HUMIDITY_HIGH = "humidity_high"
     NIGHT_COOLING = "night_cooling"
+    #: The compressor is heating, and more air carries more of its heat.
+    HEAT_PUMP = "heat_pump"
     #: Outside is warmer than the air leaving the house, so ventilating imports
     #: heat. Beats everything, including air quality.
     HEAT_PROTECTION = "heat_protection"
@@ -324,6 +326,9 @@ CONF_FAN_QUIET_MAX = "fan_quiet_max"
 CONF_FAN_BOOST = "fan_boost"
 CONF_FAN_AIR_QUALITY = "fan_air_quality"
 CONF_FAN_NIGHT_COOLING = "fan_night_cooling"
+#: The floor while the compressor heats by day. The supply air leaves at the
+#: condenser temperature, so the heat delivered grows with the air moved.
+CONF_FAN_HEAT_PUMP = "fan_heat_pump"
 
 # Air quality thresholds.
 CONF_HUMIDITY_HIGH = "humidity_high"
@@ -380,6 +385,7 @@ DEFAULTS: dict[str, object] = {
     CONF_FAN_BOOST: 3,
     CONF_FAN_AIR_QUALITY: 3,
     CONF_FAN_NIGHT_COOLING: 3,
+    CONF_FAN_HEAT_PUMP: 3,
     CONF_HUMIDITY_HIGH: 70.0,
     CONF_CO2_HIGH: 1000.0,
     CONF_SURPLUS_START: 800.0,

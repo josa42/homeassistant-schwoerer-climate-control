@@ -651,6 +651,51 @@ def test_boost_does_not_lower_a_higher_demand() -> None:
     assert decision.fan_level == 4
 
 
+def test_a_heating_compressor_raises_the_fan_by_day() -> None:
+    decision, _ = run(given(compressor_running=read(True)))
+    assert decision.fan_level == 3
+    assert decision.fan_reason is FanReason.HEAT_PUMP
+    assert decision.fan_requested_by is None
+
+
+def test_a_heating_compressor_leaves_the_night_stage_alone() -> None:
+    decision, _ = run(given(now=NIGHT, compressor_running=read(True)))
+    assert decision.fan_level == 1
+    assert decision.fan_reason is FanReason.NIGHT
+
+
+def test_a_heating_compressor_raises_the_fan_on_holiday() -> None:
+    decision, _ = run(given(compressor_running=read(True)), holiday=True)
+    assert decision.fan_level == 3
+    assert decision.fan_reason is FanReason.HEAT_PUMP
+
+
+def test_a_missing_compressor_status_does_not_raise_the_fan() -> None:
+    decision, _ = run(given(compressor_running=Reading()))
+    assert decision.fan_level == 2
+
+
+def test_a_compressor_only_raises_the_fan_while_heating() -> None:
+    inputs = given(outdoor=read(28.0), compressor_running=read(True))
+    assert run(inputs, mode=Mode.COOLING)[0].fan_reason is not FanReason.HEAT_PUMP
+
+
+def test_the_heat_pump_floor_keeps_the_room_that_asked_for_more() -> None:
+    bath = a_room("bad", humidity=read(76.0))
+    decision, _ = run(
+        given(compressor_running=read(True), rooms=(bath,)), {CONF_FAN_AIR_QUALITY: 4}
+    )
+    assert decision.fan_level == 4
+    assert decision.fan_requested_by == "Bad"
+
+
+def test_quiet_caps_the_heat_pump_floor() -> None:
+    decision, _ = run(given(compressor_running=read(True)), fan_request=FanMode.QUIET)
+    assert decision.fan_level == 1
+    assert decision.fan_capped_from == 3
+    assert decision.fan_reason is FanReason.HEAT_PUMP
+
+
 def test_a_fixed_stage_wins_including_zero() -> None:
     bath = a_room("bad", humidity=read(90.0))
     decision, _ = run(given(rooms=(bath,)), fan_request=0)

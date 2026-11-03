@@ -118,6 +118,7 @@
           "fan_boost": "Luftstufe bei Boost",
           "fan_air_quality": "Luftstufe bei Feuchte oder CO₂",
           "fan_night_cooling": "Luftstufe für Nachtauskühlung",
+          "fan_heat_pump": "Luftstufe während die Wärmepumpe heizt",
           "humidity_high": "Feuchte ist hoch über",
           "co2_high": "CO₂ ist hoch über",
           "surplus_start": "Energie übrig ab",

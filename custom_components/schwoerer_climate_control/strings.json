@@ -118,6 +118,7 @@
           "fan_boost": "Fan level when boosting",
           "fan_air_quality": "Fan level for humidity or CO₂",
           "fan_night_cooling": "Fan level for night cooling",
+          "fan_heat_pump": "Fan level while the heat pump heats",
           "humidity_high": "Humidity is high above",
           "co2_high": "CO₂ is high above",
           "surplus_start": "Spare energy starts above",

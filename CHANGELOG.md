@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **The fan runs at least stage 3 while the heat pump heats.** The supply air
+  leaves at the condenser temperature, so more air carries more of the
+  compressor's heat. This applies by day only and while the mode is heating, and
+  a room asking for more keeps its stage. The stage is set with *Fan level while
+  the heat pump heats*.
+
 ## 1.3.0 - 2026-11-01
 
 ### Added

@@ -277,6 +277,50 @@ expiry can be added later.
 Rooms with an open window ask for nothing. Their humidity and CO₂ readings are
 measuring outdoors.
 
+### More air while the heat pump heats
+
+The heat pump heats through the supply air, so the air it moves is what limits
+the heat it delivers. A run on 1 November at 4 to 8 °C outside and stage 2
+shows the shape:
+
+| | Compressor off | Compressor running |
+| --- | --- | --- |
+| T4, supply air after the reheater | 16.7 °C | 46 to 48 °C |
+| T8, condenser | 16.9 °C | 47 to 49 °C |
+| T5, extract air | 20.7 °C | 21 to 22 °C |
+
+The supply air leaves at the condenser temperature, and its highest reading in
+the recorded history is about 50 °C, which looks like a ceiling on the supply
+air rather than on the compressor. If that holds, heat delivered grows with the
+air moved, and a run that takes three to six hours at stage 2 gets shorter at
+stage 3. So while the compressor heats, the fan is raised to at least 3.
+
+It is a floor and not a rung of the ladder. It lifts whatever the rest decided,
+keeps a room that asks for more, and lets `quiet` cap it like anything else.
+Three limits apply:
+
+- Only in heating. In cooling the compressor runs on surplus, and the bypass
+  rules decide the fan there.
+- Not at night. In ten nights at stage 1 the compressor never ran, and on
+  1 November it started 13 seconds after the fan went to stage 2. That could be
+  the unit needing stage 2 or just the morning demand, and the data cannot say
+  which. Either way, raising the fan at night has nothing to work with.
+- Only on a status that says it runs. A missing reading is no reason to raise
+  the fan, which is the opposite of the release lockout, where a missing reading
+  errs towards leaving the release alone.
+
+The supply-air margin of the auxiliary heaters is not affected. With the
+compressor running the supply air sits about 25 K above the room. The same heat
+spread over 40 % more air still leaves about 17 K, far above the 5 K margin,
+which in practice separates a running compressor from a standing one at any
+stage.
+
+What is not measured yet is whether the compressor keeps up. Before this change
+no run happened at stage 3, so the first runs are the test. If T4 stays near
+47 °C at stage 3, the heat delivered went up. If it falls in proportion to the
+extra air, the compressor is at its limit and the floor buys nothing but air
+exchange.
+
 ### Not ventilating against the heat
 
 Above all of that sits one ceiling. While it is warmer outside than the air

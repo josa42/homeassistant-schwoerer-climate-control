@@ -50,6 +50,7 @@ from .const import (
     CONF_FAN_AIR_QUALITY,
     CONF_FAN_BOOST,
     CONF_FAN_HEAT_CAP,
+    CONF_FAN_HEAT_PUMP,
     CONF_FAN_HOLIDAY,
     CONF_FAN_NIGHT,
     CONF_FAN_NIGHT_COOLING,
@@ -253,6 +254,7 @@ def thresholds_schema(values: Mapping[str, Any]) -> vol.Schema:
         CONF_FAN_BOOST: _stage(),
         CONF_FAN_AIR_QUALITY: _stage(),
         CONF_FAN_NIGHT_COOLING: _stage(),
+        CONF_FAN_HEAT_PUMP: _stage(),
         CONF_HUMIDITY_HIGH: selector.NumberSelector(
             selector.NumberSelectorConfig(min=30, max=100, step=1, unit_of_measurement="%")
         ),

@@ -33,6 +33,7 @@ from .const import (
     CONF_FAN_AIR_QUALITY,
     CONF_FAN_BOOST,
     CONF_FAN_HEAT_CAP,
+    CONF_FAN_HEAT_PUMP,
     CONF_FAN_HOLIDAY,
     CONF_FAN_NIGHT,
     CONF_FAN_NIGHT_COOLING,
@@ -529,6 +530,7 @@ SYSTEM_SETTINGS: tuple[str, ...] = (
     CONF_FAN_BOOST,
     CONF_FAN_AIR_QUALITY,
     CONF_FAN_NIGHT_COOLING,
+    CONF_FAN_HEAT_PUMP,
     CONF_FAN_HEAT_CAP,
     CONF_FAN_OFF_ABOVE,
     CONF_HEAT_CAP_ABOVE,
@@ -895,6 +897,22 @@ def _fan_level(
         level, reason = int(config.number(CONF_FAN_NIGHT)), FanReason.NIGHT
     else:
         level, reason = int(config.number(CONF_FAN_NORMAL)), FanReason.NORMAL
+
+    # A floor rather than a rung of the ladder above, so it raises whatever won
+    # there without taking the name of the room that asked. The supply air
+    # leaves at the condenser temperature, about 47 °C here, so more air
+    # carries more of the compressor's heat. Not at night, which keeps its own
+    # stage, and only on a reading that says it runs: a missing status is no
+    # reason to raise the fan.
+    heat_pump = int(config.number(CONF_FAN_HEAT_PUMP))
+    if (
+        mode is Mode.HEATING
+        and not is_night
+        and not inputs.compressor_running.missing
+        and bool(inputs.compressor_running.value)
+        and heat_pump > level
+    ):
+        level, reason, requested_by = heat_pump, FanReason.HEAT_PUMP, None
 
     capped_from: int | None = None
     if fan_request is FanMode.BOOST:
