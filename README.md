@@ -85,14 +85,82 @@ Below the frost limit, heating happens whatever the mode says. That also holds
 when the outdoor reading has gone missing, which is exactly when a freezing house
 most needs it.
 
-Air quality wins on the fan: humidity or CO₂ in any room raises the level, at
-night too. The fan select caps or raises that with `quiet` and `boost`, and a
-fixed stage overrides everything.
+### The fan level
 
-With one exception, which sits above air quality. While it is warmer outside than
-the air leaving the house, ventilating imports heat, so the fan is capped, and in
-a heat wave it stops. Ventilating against indoor humidity with 39 °C air makes the
-humidity worse rather than better, because the warmer air carries far more water.
+There is one fan for the whole house, so every room's wish ends up as a single
+stage. That stage is built in steps. The first picks a base stage, and each one
+after it may raise or cap what the one before it left. The decision sensor names
+the step that set the result (`fan_reason`), the room that asked for it
+(`fan_requested_by`) and, when a cap lowered it, the stage it came down from
+(`fan_capped_from`).
+
+```mermaid
+flowchart TD
+    select{Fan select} -->|fixed stage 0 to 4| fixed([That stage, nothing below applies])
+    select -->|automatic, quiet or boost| co2{CO₂ high in a room<br/>for 5 minutes?}
+    co2 -->|yes| aq[Air quality: 3]
+    co2 -->|no| humid{Humidity high<br/>in a room?}
+    humid -->|yes| aq
+    humid -->|no| nightcool{Cooling, night and<br/>cooler outside?}
+    nightcool -->|yes| nc[Night cooling: 3]
+    nightcool -->|no| holiday{Holiday?}
+    holiday -->|yes| ho[Holiday: 1]
+    holiday -->|no| night{Night?}
+    night -->|yes| ni[Night: 1]
+    night -->|no| normal[Normal: 2]
+    aq & nc & ho & ni & normal --> hp{Heating, daytime,<br/>compressor running?}
+    hp -->|yes| hpraise[Raise to at least 3]
+    hp -->|no| mode
+    hpraise --> mode{Fan select}
+    mode -->|boost| boost[Raise to at least 3]
+    mode -->|quiet| quiet[Cap at 1]
+    mode -->|automatic| cooling
+    boost & quiet --> cooling{Cooling?}
+    cooling -->|yes| floor[Raise to at least 1]
+    cooling -->|no| heat
+    floor --> heat{Not heating and warmer<br/>outside than the extract air?}
+    heat -->|by more than 10 K| off[Stop: 0]
+    heat -->|by more than 3 K| cap[Cap at 1]
+    heat -->|no| result([Fan level])
+    off & cap --> result
+```
+
+The numbers in the chart are the defaults. Every one of them is a setting on the
+hub, under **Configure** → **Temperatures, thresholds and fan levels**.
+
+| Step | What it reads | What it does | Settings |
+| --- | --- | --- | --- |
+| Fixed stage | The fan select set to 0 to 4 | That stage, whatever anything else says, stage 0 included | |
+| CO₂ | Each room's CO₂ sensor | Above 1000 ppm for 5 minutes, the base is 3 | `co2_high` (per room), `fan_air_quality` |
+| Humidity | Each room's humidity sensor | Above 70 %, the base is 3, at once | `humidity_high` (per room), `fan_air_quality` |
+| Night cooling | Mode, time, outdoor and the warmest room | While cooling at night with it cooler outside, the base is 3 | `fan_night_cooling` |
+| Holiday | The holiday switch | The base is 1 | `fan_holiday` |
+| Night | The time, 20:00 to 05:00 | The base is 1 | `fan_night`, `night_start`, `night_end` |
+| Normal | | The base is 2 | `fan_normal` |
+| Heat pump | Mode, time and the heat pump status | While heating by day with the compressor running, at least 3 | `fan_heat_pump` |
+| Boost | The fan select | At least 3 | `fan_boost` |
+| Quiet | The fan select | At most 1, and the decision records what it capped | `fan_quiet_max` |
+| Cooling floor | Mode | While cooling, at least 1, because stage 0 shuts the bypass | |
+| Heat protection | Outdoor against extract air | Unless heating: 3 K warmer outside caps at 1, 10 K stops the fan | `heat_cap_above`, `fan_heat_cap`, `fan_off_above` |
+
+A few things follow from the order.
+
+- **Air quality wins over the time of day.** Seventy-eight percent humidity in
+  the bathroom raises the fan at night too, because mould costs more than a
+  stage of noise. `quiet` is the way to say otherwise. A room with an open window
+  asks for nothing, because its sensors are measuring outdoors.
+- **The heat pump raises, it never lowers.** The supply air leaves the unit at
+  the condenser temperature, around 47 °C on this house against 21 °C in the
+  rooms, so moving more air carries more of the compressor's heat into the house.
+  A room asking for more than 3 keeps its stage and its name in the decision.
+  At night the night stage stays, and a heat pump status that cannot be read does
+  not count as running.
+- **Heat protection beats air quality.** While it is warmer outside than the air
+  leaving the house, ventilating imports heat. Ventilating against indoor
+  humidity with 39 °C air makes the humidity worse rather than better, because the
+  warmer air carries far more water. It does not apply while heating, where the
+  warmth coming in is the point.
+- **A fixed stage overrides everything**, heat protection and stage 0 included.
 
 ### The auxiliary heaters
 
