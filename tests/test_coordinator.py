@@ -477,13 +477,30 @@ async def test_the_house_release_goes_off_after_the_room(
 
 
 SUPPLY_AIR = "sensor.supply_air"
+ROOM_DECISION = "sensor.wohnzimmer_decision"
+
+
+def recorded_decision(*, waiting_since: timedelta | None, recorded: timedelta) -> State:
+    """The room decision as the recorder last saw it, some time before the start."""
+    now = dt_util.utcnow()
+    return State(
+        ROOM_DECISION,
+        "normal",
+        {
+            "auxiliary_heat_waiting_since": None
+            if waiting_since is None
+            else (now - waiting_since).isoformat()
+        },
+        last_changed=now - recorded,
+        last_updated=now - recorded,
+    )
 
 
 @pytest.fixture
 def start_with_history(hass: HomeAssistant, unit, monkeypatch: pytest.MonkeyPatch):
     """A controller started over a recorder that saw the room at `earlier` °C."""
 
-    async def _start(earlier: float, **scene):
+    async def _start(earlier: float, decision: State | None = None, **scene):
         hass.config.components.add("recorder")
         recorder = SimpleNamespace(async_add_executor_job=hass.async_add_executor_job)
         monkeypatch.setattr(
@@ -497,8 +514,16 @@ def start_with_history(hass: HomeAssistant, unit, monkeypatch: pytest.MonkeyPatc
                     THERMOSTAT: [
                         State(THERMOSTAT, "fan_only", {"current_temperature": earlier})
                     ]
-                }
+                },
+                get_last_state_changes=lambda _hass, _count, entity_id: (
+                    {entity_id: [decision]} if decision is not None else {}
+                ),
             ),
+        )
+        monkeypatch.setattr(
+            "custom_components.schwoerer_climate_control.coordinator."
+            "ClimateControlCoordinator._decision_entity_id",
+            lambda _self, _unique_id: ROOM_DECISION,
         )
         unit(**scene)
         hass.states.async_set(SUPPLY_AIR, "40.0")
@@ -522,7 +547,7 @@ def start_with_history(hass: HomeAssistant, unit, monkeypatch: pytest.MonkeyPatc
         # The mode restores after the first evaluation, as on a real start.
         await coordinator.async_set_mode(Mode.HEATING)
         await hass.async_block_till_done()
-        return coordinator.engine_state.aux_progress["wohnzimmer"]
+        return coordinator
 
     return _start
 
@@ -532,14 +557,16 @@ async def test_a_restart_judges_the_room_on_what_the_recorder_saw(
 ) -> None:
     # Warm supply air and nowhere in the last window: no second wait after a
     # restart before the heater's dwell can start.
-    progress = await start_with_history(19.0, current=19.0)
+    coordinator = await start_with_history(19.0, current=19.0)
+    progress = coordinator.engine_state.aux_progress["wohnzimmer"]
     assert progress.stalled is True
 
 
 async def test_a_room_that_rose_before_the_restart_is_left_to_the_heat_pump(
     start_with_history,
 ) -> None:
-    progress = await start_with_history(18.7, current=19.0)
+    coordinator = await start_with_history(18.7, current=19.0)
+    progress = coordinator.engine_state.aux_progress["wohnzimmer"]
     assert progress.stalled is False
     assert progress.temperature == 19.0, "the next window starts from here"
 
@@ -548,7 +575,8 @@ async def test_a_room_with_its_heater_on_is_watched_afresh(
     start_with_history,
 ) -> None:
     # Its rise is the heater's, so the recorder says nothing about the heat pump.
-    progress = await start_with_history(19.0, current=19.0, hvac_mode="heat")
+    coordinator = await start_with_history(19.0, current=19.0, hvac_mode="heat")
+    progress = coordinator.engine_state.aux_progress["wohnzimmer"]
     assert progress.stalled is False
     assert progress.since > dt_util.utcnow() - timedelta(minutes=1)
 
@@ -562,7 +590,8 @@ async def test_the_head_start_is_not_offered_for_long(
         "custom_components.schwoerer_climate_control.coordinator.RESUME_OFFERED_FOR",
         timedelta(0),
     )
-    progress = await start_with_history(19.0, current=19.0)
+    coordinator = await start_with_history(19.0, current=19.0)
+    progress = coordinator.engine_state.aux_progress["wohnzimmer"]
     assert progress.stalled is False
     assert progress.since > dt_util.utcnow() - timedelta(minutes=1)
 
@@ -594,3 +623,49 @@ async def test_a_setpoint_entity_drives_the_room(
 
     assert coordinator.data.rooms[0].target_temperature == 21.5
     assert coordinator.data.rooms[0].settings["target_normal"]["source"] == "room"
+
+
+async def test_a_restart_carries_on_with_the_heaters_dwell(start_with_history) -> None:
+    # Wanted for 20 minutes when Home Assistant went down a minute ago. The
+    # dwell has run out, so the heater goes on at once rather than in 15 min.
+    decision = recorded_decision(
+        waiting_since=timedelta(minutes=20), recorded=timedelta(minutes=1)
+    )
+    coordinator = await start_with_history(17.5, decision=decision, current=17.5)
+    assert coordinator.data.rooms[0].auxiliary_heat is True
+
+
+async def test_a_dwell_that_has_not_run_out_carries_on_where_it_stood(
+    start_with_history,
+) -> None:
+    decision = recorded_decision(
+        waiting_since=timedelta(minutes=10), recorded=timedelta(minutes=1)
+    )
+    coordinator = await start_with_history(17.5, decision=decision, current=17.5)
+    room = coordinator.data.rooms[0]
+    assert room.auxiliary_heat is False
+    assert room.auxiliary_heat_waiting_since < dt_util.utcnow() - timedelta(minutes=9)
+
+
+async def test_a_dwell_from_before_a_long_gap_starts_over(start_with_history) -> None:
+    # Nothing watched the room for half an hour.
+    decision = recorded_decision(
+        waiting_since=timedelta(minutes=40), recorded=timedelta(minutes=30)
+    )
+    coordinator = await start_with_history(17.5, decision=decision, current=17.5)
+    room = coordinator.data.rooms[0]
+    assert room.auxiliary_heat is False
+    assert room.auxiliary_heat_waiting_since > dt_util.utcnow() - timedelta(minutes=1)
+
+
+async def test_a_room_no_longer_short_does_not_take_up_the_dwell(
+    start_with_history,
+) -> None:
+    # The setpoint was lowered across the reload: the heater is not wanted, so
+    # there is no dwell to carry on, and none is left waiting to be picked up.
+    decision = recorded_decision(
+        waiting_since=timedelta(minutes=20), recorded=timedelta(minutes=1)
+    )
+    coordinator = await start_with_history(19.9, decision=decision, current=19.9)
+    assert coordinator.data.rooms[0].auxiliary_heat is False
+    assert "wohnzimmer" not in coordinator.engine_state.aux_needed_since

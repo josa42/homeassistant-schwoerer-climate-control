@@ -727,6 +727,7 @@ def _room_decision(
     progress: AuxProgress | None = None
     aux_why = ""
     aux_waiting: timedelta | None = None
+    aux_waiting_since: datetime | None = None
     if room.actuator is ActuatorKind.WGT_ROOM:
         aux_below = config.number(CONF_AUX_HEAT_BELOW)
         off_at_night = bool(config.get(CONF_AUX_HEAT_OFF_AT_NIGHT))
@@ -783,6 +784,7 @@ def _room_decision(
             auxiliary = held >= AUX_DWELL
             if not auxiliary:
                 aux_waiting = AUX_DWELL - held
+                aux_waiting_since = aux_since or now
             gates.append(
                 Gate(
                     "aux_dwell",
@@ -819,6 +821,7 @@ def _room_decision(
         auxiliary_heat=auxiliary,
         heating_enabled=heating_enabled,
         window_open=window_open,
+        auxiliary_heat_waiting_since=aux_waiting_since,
         gates=tuple(gates),
         inputs=raw,
         settings=settings,

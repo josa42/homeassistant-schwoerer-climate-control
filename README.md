@@ -192,7 +192,12 @@ setpoint, since the heater's own heat makes the room rise and says nothing about
 the heat pump. A window opening or the release being withdrawn forgets the
 progress, and the watch starts over. A restart of Home Assistant does not: the
 first window starts from the room's temperature 30 minutes earlier, read from
-the recorder, unless the heater is on at the time.
+the recorder, unless the heater is on at the time. The 15 minutes a heater waits
+before it goes on survive a restart or a reload too: the room's decision sensor
+records since when it has been waiting (`auxiliary_heat_waiting_since`), and the
+wait carries on from there when the last record is less than 15 minutes old.
+Whether the heater is still wanted is decided afresh, so a window opened or a
+setpoint lowered in the meantime still ends the wait.
 
 From *auxiliary heat regardless* (2 K) short the supply air no longer gets a say.
 Without a supply air reading the room decides alone.

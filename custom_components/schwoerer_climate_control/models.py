@@ -153,6 +153,9 @@ class RoomDecision:
     #: there is no separate on and off.
     heating_enabled: bool | None = None
     window_open: bool = False
+    #: Since when the auxiliary heater has been wanted and held back by the
+    #: dwell. Recorded, so the dwell can carry on where it stood after a restart.
+    auxiliary_heat_waiting_since: datetime | None = None
     gates: tuple[Gate, ...] = ()
     inputs: dict[str, Any] = field(default_factory=dict)
     settings: dict[str, dict[str, Any]] = field(default_factory=dict)
@@ -179,6 +182,11 @@ class RoomDecision:
             "auxiliary_heat": self.auxiliary_heat,
             "heating_enabled": self.heating_enabled,
             "window_open": self.window_open,
+            "auxiliary_heat_waiting_since": (
+                None
+                if self.auxiliary_heat_waiting_since is None
+                else self.auxiliary_heat_waiting_since.isoformat()
+            ),
             "room_temperature": self.inputs.get("temperature", {}).get("value"),
             "failed_inputs": list(self.degraded),
         }

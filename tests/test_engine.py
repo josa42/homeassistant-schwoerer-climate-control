@@ -1010,3 +1010,22 @@ def test_every_decision_carries_its_inputs_and_settings(mode: Mode) -> None:
     assert decision.settings["heat_release_below"]["source"] == "default"
     assert decision.as_dict()["rooms"][0]["name"] == "Wohnzimmer"
     assert decision.as_attributes()["mode"] == str(mode)
+
+
+def test_a_waiting_heater_says_since_when() -> None:
+    # Recorded, so that the dwell survives a restart.
+    since = NOON - timedelta(minutes=5)
+    inputs = given(rooms=(a_cold_room(temperature=read(17.5)),))
+    decision, _ = run(inputs, state=EngineState(aux_needed_since={"wohnzimmer": since}))
+    room = decision.rooms[0]
+    assert room.auxiliary_heat is False
+    assert room.auxiliary_heat_waiting_since == since
+    assert room.as_attributes()["auxiliary_heat_waiting_since"] == since.isoformat()
+
+
+def test_a_heater_that_runs_is_not_waiting() -> None:
+    since = NOON - AUX_DWELL
+    inputs = given(rooms=(a_cold_room(temperature=read(17.5)),))
+    decision, _ = run(inputs, state=EngineState(aux_needed_since={"wohnzimmer": since}))
+    assert decision.rooms[0].auxiliary_heat is True
+    assert decision.rooms[0].auxiliary_heat_waiting_since is None

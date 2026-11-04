@@ -14,6 +14,15 @@
   the rooms keep their day setpoint at night, while the fan still runs its
   night stage.
 
+### Changed
+
+- **A restart no longer starts an auxiliary heater's wait over.** The 15 minutes
+  a heater waits before it goes on used to begin again with every restart or
+  reload, which in the living room meant twice in one morning. The room's
+  decision sensor now records since when the heater has been waiting
+  (`auxiliary_heat_waiting_since`), and the wait carries on from there when the
+  record is less than 15 minutes old.
+
 ### Fixed
 
 - **A contact that cannot be read counts as closed.** It used to count as an

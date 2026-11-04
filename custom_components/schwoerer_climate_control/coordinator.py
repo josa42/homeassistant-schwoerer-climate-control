@@ -56,6 +56,7 @@ from homeassistant.util import slugify
 
 from .adapters import Write, generic, schwoerer
 from .const import (
+    AUX_DWELL,
     AUX_PROGRESS_WINDOW,
     CONF_ACTUATOR,
     CONF_BYPASS_SENSOR,
@@ -180,8 +181,9 @@ class ClimateControlCoordinator(DataUpdateCoordinator[SystemDecision]):
 
         self.engine_state = EngineState()
         # Where the recorder last saw each room, offered to the engine until it
-        # takes it up or it goes stale. See async_resume_aux_progress.
-        self._resumed: dict[str, AuxProgress] = {}
+        # takes it up or it goes stale. See async_resume_aux.
+        self._resumed_progress: dict[str, AuxProgress] = {}
+        self._resumed_since: dict[str, datetime] = {}
         self._resumed_until: datetime | None = None
         self._unsubscribe: list[Any] = []
         self._last_write: datetime | None = None
@@ -400,7 +402,20 @@ class ClimateControlCoordinator(DataUpdateCoordinator[SystemDecision]):
             stable_for=reading.stable_for,
         )
 
-    async def async_resume_aux_progress(self) -> None:
+    async def async_resume_aux(self) -> None:
+        """Pick up each room's auxiliary heater state where the recorder left it.
+
+        Both are "since when" and live only in memory, so a restart or a reload
+        would start them over: the watch on a room left to the heat pump, and
+        the dwell of a heater that is wanted.
+        """
+        if "recorder" not in self.hass.config.components:
+            return
+        await self._resume_aux_progress()
+        await self._resume_aux_dwell()
+        self._resumed_until = dt_util.utcnow() + RESUME_OFFERED_FOR
+
+    async def _resume_aux_progress(self) -> None:
         """Pick up each room's watch where the recorder last saw it.
 
         Without this, every restart would hold a stalled room's heater back for
@@ -415,8 +430,6 @@ class ClimateControlCoordinator(DataUpdateCoordinator[SystemDecision]):
         aside and offered for a few minutes rather than put into the state,
         where that first evaluation would drop it.
         """
-        if "recorder" not in self.hass.config.components:
-            return
         sources: dict[str, tuple[str, bool]] = {}
         for room in self.rooms.values():
             released = self._auxiliary_enabled(room)
@@ -451,18 +464,58 @@ class ClimateControlCoordinator(DataUpdateCoordinator[SystemDecision]):
         for room_id, (entity, attribute) in sources.items():
             found = states.get(entity) or [None]
             if (value := _temperature(found[0], attribute=attribute)) is not None:
-                self._resumed[room_id] = AuxProgress(since=since, temperature=value)
-        self._resumed_until = dt_util.utcnow() + RESUME_OFFERED_FOR
+                self._resumed_progress[room_id] = AuxProgress(since=since, temperature=value)
+
+    async def _resume_aux_dwell(self) -> None:
+        """Carry on with a heater's dwell where the room's decision sensor left it.
+
+        Its last recorded state says since when the heater was waiting. It is
+        only taken when it is recent: a gap longer than the dwell itself means
+        nothing watched the room for long enough to vouch for it. The engine
+        decides afresh whether the heater is still wanted, so a window opened
+        or a setpoint lowered meanwhile ends the dwell as it always did.
+        """
+        entities = {
+            room.room_id: entity
+            for room in self.rooms.values()
+            if (entity := self._decision_entity_id(room.subentry_id))
+        }
+        if not entities:
+            return
+        try:
+            found = await get_instance(self.hass).async_add_executor_job(
+                _last_known_states, self.hass, list(entities.values())
+            )
+        except Exception as err:  # noqa: BLE001
+            # Only a head start, as for the watch.
+            _LOGGER.warning("Could not read the room decisions back: %s", err)
+            return
+
+        now = dt_util.utcnow()
+        for room_id, entity in entities.items():
+            state = found.get(entity)
+            if state is None or now - state.last_updated > AUX_DWELL:
+                continue
+            since = dt_util.parse_datetime(
+                str(state.attributes.get("auxiliary_heat_waiting_since") or "")
+            )
+            if since is not None:
+                self._resumed_since[room_id] = since
 
     def _with_resumed_progress(self) -> EngineState:
         """The engine state, with the recorder's head start for rooms not yet watched."""
-        if self._resumed and self._resumed_until and dt_util.utcnow() > self._resumed_until:
-            self._resumed = {}
-        if not self._resumed:
+        if self._resumed_until and dt_util.utcnow() > self._resumed_until:
+            self._resumed_progress = {}
+            self._resumed_since = {}
+        if not self._resumed_progress and not self._resumed_since:
             return self.engine_state
         return replace(
             self.engine_state,
-            aux_progress={**self._resumed, **self.engine_state.aux_progress},
+            aux_progress={**self._resumed_progress, **self.engine_state.aux_progress},
+            aux_needed_since={
+                **self._resumed_since,
+                **self.engine_state.aux_needed_since,
+            },
         )
 
     async def _forecast_max(self) -> Reading | None:
@@ -573,10 +626,15 @@ class ClimateControlCoordinator(DataUpdateCoordinator[SystemDecision]):
             night_setback=self.night_setback,
         )
         # A head start is used once. Taken up, the engine carries it on.
-        self._resumed = {
+        self._resumed_progress = {
             room_id: progress
-            for room_id, progress in self._resumed.items()
+            for room_id, progress in self._resumed_progress.items()
             if room_id not in self.engine_state.aux_progress
+        }
+        self._resumed_since = {
+            room_id: since
+            for room_id, since in self._resumed_since.items()
+            if room_id not in self.engine_state.aux_needed_since
         }
         # Logged before writing, so the entry exists as the origin of the context
         # the writes are sent under.
@@ -1022,6 +1080,18 @@ class ClimateControlCoordinator(DataUpdateCoordinator[SystemDecision]):
             unsubscribe()
         self._unsubscribe.clear()
         await super().async_shutdown()
+
+
+def _last_known_states(hass: HomeAssistant, entity_ids: list[str]) -> dict[str, State]:
+    """The last state each entity had that was not unavailable. Runs in the executor."""
+    found: dict[str, State] = {}
+    for entity_id in entity_ids:
+        states = history.get_last_state_changes(hass, 3, entity_id).get(entity_id, [])
+        for state in reversed(states):
+            if state.state not in (STATE_UNKNOWN, STATE_UNAVAILABLE):
+                found[entity_id] = state
+                break
+    return found
 
 
 def _temperature(state: State | None, *, attribute: bool) -> float | None:
