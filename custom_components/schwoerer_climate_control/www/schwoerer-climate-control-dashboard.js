@@ -2,13 +2,10 @@
  * Dashboard strategy for the Schwörer Climate Control integration.
  *
  * Builds the dashboard from the entity registry at render time, so a room added
- * later appears without anyone editing a dashboard. Two views: an overview with
- * the controls, and a debug view laying out the decision behind the unit and
- * behind every room.
- *
- * Deliberately built from Home Assistant's own cards. The decision records are
- * rendered by markdown cards reading the sensors' attributes, so this ships no
- * custom card and does not compete with a card repository of its own.
+ * later appears without anyone editing a dashboard. The overview is put
+ * together for the mode the controller runs in, from the cards shipped beside
+ * this file; subviews cover each room, the house being too cold or too warm, a
+ * chronicle, the unit, and every decision in full.
  *
  * Use it with:
  *
@@ -187,39 +184,86 @@ function decisionCard(hass, entityId, t) {
   };
 }
 
+const NAV = {
+  en: { cold: "House too cold?", warm: "House too warm?", chronicle: "Chronicle", device: "Unit", debug: "All details", room: "Room" },
+  de: { cold: "Haus zu kalt?", warm: "Haus zu warm?", chronicle: "Chronik", device: "Gerät", debug: "Alle Details", room: "Raum" },
+};
+
+function nav(hass) {
+  const language = ((hass && hass.language) || "en").split("-")[0];
+  return NAV[language] || NAV.en;
+}
+
+/** The same slug the cards link to a room's view by. */
+function slug(text) {
+  return String(text)
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replaceAll("ß", "ss")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+function section(cards, span = 2) {
+  return { type: "grid", column_span: span, cards };
+}
+
+function card(type, extra = {}) {
+  return { type: `custom:schwoerer-${type}-card`, ...extra };
+}
+
+/** The mode the controller runs in decides what the overview puts first. */
 function overviewView(hass, hub, rooms, t) {
-  const cards = [];
-
-  if (hub) {
-    const decisions = ofDomain(hub.ids, "sensor").filter((id) =>
-      isDecision(hass, id),
-    );
-    if (decisions.length) cards.push(headline(decisions[0], t));
-
-    const controls = ofDomain(hub.ids, "switch", "select", "button", "number");
-    if (controls.length) {
-      cards.push({ type: "entities", title: t.controls, entities: controls });
-    }
-
-    const status = ofDomain(hub.ids, "sensor", "binary_sensor");
-    if (status.length) {
-      cards.push({ type: "entities", title: t.status, entities: status });
-    }
+  const n = nav(hass);
+  const decision = hub
+    ? ofDomain(hub.ids, "sensor").find((id) => isDecision(hass, id) && "mode" in hass.states[id].attributes)
+    : null;
+  const mode = decision ? hass.states[decision].attributes.mode : "heating";
+  const links = (...items) => card("links", { links: items });
+  const tail = [
+    ["chronik", n.chronicle],
+    ["geraet", n.device],
+    ["debug", n.debug],
+  ];
+  let sections;
+  if (mode === "cooling") {
+    sections = [
+      section([card("alerts")]),
+      section([card("health")], 1),
+      section([card("energy")], 1),
+      section([card("cooling")]),
+      section([links(["zu-warm", n.warm], ...tail)]),
+    ];
+  } else if (mode === "ventilation") {
+    sections = [
+      section([card("alerts")]),
+      section([card("health")], 1),
+      section([card("energy")], 1),
+      section([card("air")]),
+      section([links(["zu-kalt", n.cold], ["zu-warm", n.warm], ...tail)]),
+    ];
+  } else {
+    sections = [
+      section([card("alerts")]),
+      section([card("health")], 1),
+      section([card("energy")], 1),
+      section([card("heat-pump")]),
+      section([card("aux")]),
+      section([links(["zu-kalt", n.cold], ["zu-warm", n.warm], ...tail)]),
+    ];
   }
+  return { title: t.overview, path: "overview", type: "sections", max_columns: 2, sections };
+}
 
-  const roomEntities = rooms.flatMap((room) => room.ids);
-  if (roomEntities.length) {
-    cards.push({
-      type: "entities",
-      title: t.rooms,
-      entities: roomEntities.map((id) => ({
-        entity: id,
-        secondary_info: "last-changed",
-      })),
-    });
-  }
+function subview(path, title, cards) {
+  return { title, path, subview: true, back_path: "overview", type: "sections", max_columns: 2, sections: [section(cards)] };
+}
 
-  return { title: t.overview, path: "overview", cards };
+function roomViews(hass, rooms) {
+  return rooms.map((room) =>
+    subview(`raum-${slug(room.name)}`, room.name, [card("room", { room: room.name })]),
+  );
 }
 
 function debugView(hass, hub, rooms, t) {
@@ -249,7 +293,16 @@ function generateViews(hass) {
     ];
   }
 
-  return [overviewView(hass, hub, rooms, t), debugView(hass, hub, rooms, t)];
+  const n = nav(hass);
+  return [
+    overviewView(hass, hub, rooms, t),
+    ...roomViews(hass, rooms),
+    subview("zu-kalt", n.cold, [card("house", { variant: "cold" })]),
+    subview("zu-warm", n.warm, [card("house", { variant: "warm" })]),
+    subview("chronik", n.chronicle, [card("chronicle")]),
+    subview("geraet", n.device, [card("device")]),
+    { ...debugView(hass, hub, rooms, t), subview: true, back_path: "overview" },
+  ];
 }
 
 class ClimateControlDashboardStrategy extends HTMLElement {

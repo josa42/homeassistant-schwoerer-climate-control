@@ -358,11 +358,31 @@ strategy:
   type: custom:schwoerer-climate-control
 ```
 
-You get an overview with the controls and the current decision, and a debug view
-laying out the decision behind the unit and behind every room: the sentence, the
-conditions with their outcome, the readings with whether they are reporting, and
-every setting with the level it came from. To place just one of them inside a
-dashboard you already have, use it as a view strategy instead:
+It answers what state the house is in and why, not how to change it: the
+controller is meant to run on its own. The overview is built for the mode the
+controller runs in:
+
+| Mode | The overview puts first |
+| --- | --- |
+| Heating | Is the system keeping up, energy, the heat pump (what it is released for, what it does and why, how close the next change is, today on a timeline), the auxiliary heaters (whether they may run, and per room why they are on or off and what changes that next) |
+| Ventilation | Is the system keeping up, energy, the air per room and why the fan runs at its level |
+| Cooling | Is the system keeping up, energy, cooling (how close the release is in kelvin and watts), night cooling and heat protection |
+
+Anything that needs attention comes first in every mode: a missing input, a
+value the unit will not take, the unit out of manual, a fault it reports, frost
+protection. From the overview there is a page per room that answers why it is
+cool or warm (the possible causes, each marked as applying or not, the way to
+its heater switching on, what happens next and the last 24 hours), pages for
+the whole house being too cold or too warm, a chronicle of what changed in the
+last day and who changed it (the controller, the unit itself, or a hand or a
+window), the unit itself (fault, fans, filter, heat recovery and the path the
+air takes through it), and every decision in full.
+
+The energy needs *Power of the unit* under *Entities*. Everything else comes
+from the decision sensors and the recorder.
+
+To place just the overview, or the full decisions, inside a dashboard you
+already have, use it as a view strategy instead:
 
 ```yaml
 views:
@@ -371,9 +391,8 @@ views:
       view: debug
 ```
 
-It is built from Home Assistant's own cards, so it installs no custom card and
-stays out of the way of
-[schwoerer-lueftung-cards](https://github.com/josa42/homeassistant-schwoerer-lueftung-cards).
+The cards it uses ship with the integration and are registered with it, so
+there is nothing to install. They follow the theme, dark mode included.
 
 <br><br>
 

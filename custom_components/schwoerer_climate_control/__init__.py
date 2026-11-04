@@ -27,6 +27,9 @@ CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 STRATEGY_FILENAME = "schwoerer-climate-control-dashboard.js"
 STRATEGY_URL_PATH = f"/{DOMAIN}/{STRATEGY_FILENAME}"
+#: The cards the strategy builds the dashboard from, shipped beside it.
+CARDS_FILENAME = "schwoerer-climate-control-cards.js"
+CARDS_URL_PATH = f"/{DOMAIN}/{CARDS_FILENAME}"
 #: Kept in step with the manifest by the release script, and served as a query
 #: string, so a browser does not keep running the strategy it cached before an
 #: upgrade.
@@ -42,21 +45,24 @@ PLATFORMS: list[Platform] = [
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
-    """Register the dashboard strategy. Called once per Home Assistant session."""
+    """Register the dashboard strategy and its cards. Once per session."""
     http = getattr(hass, "http", None)
     if http is None:
         return True
 
-    strategy = Path(__file__).parent / "www" / STRATEGY_FILENAME
-    if not strategy.is_file():
-        _LOGGER.warning("Dashboard strategy asset missing at %s", strategy)
+    www = Path(__file__).parent / "www"
+    assets = [(STRATEGY_URL_PATH, www / STRATEGY_FILENAME), (CARDS_URL_PATH, www / CARDS_FILENAME)]
+    missing = [str(path) for _, path in assets if not path.is_file()]
+    if missing:
+        _LOGGER.warning("Dashboard assets missing: %s", ", ".join(missing))
         return True
 
     try:
         await http.async_register_static_paths(
-            [StaticPathConfig(STRATEGY_URL_PATH, str(strategy), cache_headers=False)]
+            [StaticPathConfig(url, str(path), cache_headers=False) for url, path in assets]
         )
-        add_extra_js_url(hass, f"{STRATEGY_URL_PATH}?v={STRATEGY_VERSION}")
+        for url, _ in assets:
+            add_extra_js_url(hass, f"{url}?v={STRATEGY_VERSION}")
     except Exception as err:  # noqa: BLE001
         # A dashboard is convenience. Whatever goes wrong here, the controller
         # still has to run, so this can never abort the setup.

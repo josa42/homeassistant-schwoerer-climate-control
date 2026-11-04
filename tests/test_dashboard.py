@@ -12,6 +12,8 @@ import json
 from pathlib import Path
 
 from custom_components.schwoerer_climate_control import (
+    CARDS_FILENAME,
+    CARDS_URL_PATH,
     STRATEGY_FILENAME,
     STRATEGY_URL_PATH,
     STRATEGY_VERSION,
@@ -20,6 +22,7 @@ from custom_components.schwoerer_climate_control.const import DOMAIN
 
 PACKAGE = Path("custom_components/schwoerer_climate_control")
 STRATEGY = PACKAGE / "www" / STRATEGY_FILENAME
+CARDS = PACKAGE / "www" / CARDS_FILENAME
 
 
 def test_the_asset_is_there() -> None:
@@ -51,3 +54,20 @@ def test_it_asks_for_our_own_entities_only() -> None:
     source = STRATEGY.read_text(encoding="utf-8")
     assert f'const DOMAIN = "{DOMAIN}"' in source
     assert "entry.platform === DOMAIN" in source
+
+
+def test_the_cards_are_there_and_served() -> None:
+    assert CARDS.is_file()
+    assert CARDS_URL_PATH == f"/{DOMAIN}/{CARDS_FILENAME}"
+
+
+def test_every_card_the_strategy_uses_is_defined() -> None:
+    # A card the strategy asks for but nobody defines renders as an error box.
+    import re
+
+    strategy = STRATEGY.read_text(encoding="utf-8")
+    cards = CARDS.read_text(encoding="utf-8")
+    used = set(re.findall(r'card\("([a-z-]+)"', strategy))
+    assert used, "the strategy builds from the cards"
+    for name in used:
+        assert f'"schwoerer-{name}-card"' in cards, name

@@ -9,6 +9,13 @@
   how far off that is (`thresholds`), what it already knows will happen and
   when (`upcoming`), and the entities behind its inputs (`sources`). None of it
   is recorded.
+- **A dashboard that says what state the house is in, and why.** The strategy
+  now builds the overview for the mode the controller runs in, from cards that
+  ship with the integration: whether the system keeps up, energy, the heat
+  pump, the auxiliary heaters, the air or cooling, each with how close the next
+  change is. A page per room says why it is cool or warm; others cover the
+  whole house being too cold or too warm, a chronicle of the last day, and the
+  unit itself. The controls are gone from it: the controller runs on its own.
 - **Power of the unit**, an optional entity under *Entities*. No decision reads
   it; the dashboard shows the energy from it.
 
