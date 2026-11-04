@@ -11,6 +11,13 @@
   still listed under *Inputs missing* straight away, and a repair follows after
   an hour.
 
+- **A slow device no longer raises "A value is not taken".** The counter behind
+  it went up with every evaluation, including those while a write was held back
+  by the one-minute spacing and those after the wanted value had changed. The
+  unit takes most of a minute to read back, so a setpoint written and put back
+  was reported as refused. Only a write sent again with the same value counts
+  now.
+
 ## Unreleased
 
 ### Changed

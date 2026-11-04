@@ -147,6 +147,38 @@ async def test_a_write_that_never_takes_is_reported(
     assert "fan_level" in coordinator.stuck_writes
 
 
+async def test_a_write_held_back_by_the_rate_limit_is_not_counted(
+    hass: HomeAssistant, start
+) -> None:
+    # A slow device reads back after the next evaluations have come and gone.
+    # Only writes that were sent again count as refused.
+    coordinator, _ = await start(fan="4")
+    for _ in range(STUCK_AFTER + 1):
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+
+    assert coordinator.stuck_writes == ()
+
+
+async def test_a_value_that_changed_meanwhile_is_not_counted(
+    hass: HomeAssistant, start, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A setpoint written for a window and then put back is two values, neither
+    # of which the device refused.
+    monkeypatch.setattr(
+        "custom_components.schwoerer_climate_control.coordinator.MIN_WRITE_INTERVAL",
+        timedelta(0),
+    )
+    coordinator, calls = await start(fan="4")
+    for request in (1, 3) * STUCK_AFTER:
+        coordinator.fan_request = request
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+
+    assert len(calls) == 2 * STUCK_AFTER, "every one of them was sent"
+    assert coordinator.stuck_writes == ()
+
+
 async def test_a_write_that_takes_clears_the_counter(
     hass: HomeAssistant, start, monkeypatch: pytest.MonkeyPatch
 ) -> None:

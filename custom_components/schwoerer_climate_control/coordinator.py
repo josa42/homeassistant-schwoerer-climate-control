@@ -180,7 +180,7 @@ class ClimateControlCoordinator(DataUpdateCoordinator[SystemDecision]):
         self._resumed_until: datetime | None = None
         self._unsubscribe: list[Any] = []
         self._last_write: datetime | None = None
-        self._attempted: set[str] = set()
+        self._attempted: dict[str, Any] = {}
         self._stuck: dict[str, int] = {}
         self._rate_limited = False
         self._evaluated = False
@@ -814,8 +814,6 @@ class ClimateControlCoordinator(DataUpdateCoordinator[SystemDecision]):
             self._rate_limited = False
             return
 
-        self._count_stuck(needed)
-
         if self.dry_run:
             for write in needed:
                 _LOGGER.info(
@@ -839,9 +837,10 @@ class ClimateControlCoordinator(DataUpdateCoordinator[SystemDecision]):
             _LOGGER.debug("Holding %d writes for %.0f s", len(needed), wait)
             return
 
+        self._count_stuck(needed)
         self._rate_limited = False
         self._last_write = now
-        self._attempted = {write.label for write in needed}
+        self._attempted = {write.label: write.expect for write in needed}
 
         for index, write in enumerate(needed):
             if index:
@@ -885,17 +884,22 @@ class ClimateControlCoordinator(DataUpdateCoordinator[SystemDecision]):
         return Context()
 
     def _count_stuck(self, needed: list[Write]) -> None:
-        """Count registers that were written and still do not read back.
+        """Count registers that are about to be sent the value they were last sent.
 
         The first failure is not worth a word: diffing against what the device
         reports means a dropped write is retried on the next evaluation. One that
         is still wrong after several goes is a different thing.
+
+        Only a write sent again counts, with the value it was sent before. The
+        unit reads back after most of a minute, so the evaluations in between,
+        and a value that changed meanwhile, say nothing about the device.
         """
-        labels = {write.label for write in needed}
-        for label in labels & self._attempted:
-            self._stuck[label] = self._stuck.get(label, 0) + 1
-        for label in set(self._stuck) - labels:
-            del self._stuck[label]
+        self._stuck = {
+            write.label: self._stuck.get(write.label, 0) + 1
+            for write in needed
+            if write.label in self._attempted
+            and self._attempted[write.label] == write.expect
+        }
 
     @property
     def stuck_writes(self) -> tuple[str, ...]:
