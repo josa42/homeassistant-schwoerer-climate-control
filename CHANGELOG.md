@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **A room has 30 minutes to rise, not 45.** A room warm supply air leaves to
+  the heat pump now counts as not catching up after half an hour without
+  rising by 0.2 K, and gets its heater 15 minutes later.
+
 ## 1.4.1 - 2026-11-04
 
 ### Changed

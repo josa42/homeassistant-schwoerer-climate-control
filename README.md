@@ -175,7 +175,7 @@ when the heat pump cannot get the room warm on its own. All of this has to hold:
   of its setpoint,
 - and the heat pump is not getting the room there on its own: either the supply
   air arrives less than *supply air counts as heating* (5 K) above the room, or
-  the room has been left to it for 45 minutes and has not risen by 0.2 K.
+  the room has been left to it for 30 minutes and has not risen by 0.2 K.
 
 Warm supply air is a promise rather than a result. On a 4 °C morning the living
 room got air 22 K above it for four hours and ended up cooler than it started,
@@ -197,8 +197,8 @@ flowchart TD
     short -->|2 K or more| dwell
     short -->|0.5 to 2 K| supply{Supply air more than<br/>5 K above the room?}
     supply -->|no, or no reading| dwell
-    supply -->|yes| rising{Risen 0.2 K in the<br/>last 45 minutes?}
-    rising -->|yes, or not 45 minutes yet| wait([Left to the heat pump])
+    supply -->|yes| rising{Risen 0.2 K in the<br/>last 30 minutes?}
+    rising -->|yes, or not 30 minutes yet| wait([Left to the heat pump])
     rising -->|no| dwell{Wanted for<br/>15 minutes?}
     dwell -->|no| off
     dwell -->|yes| on([Heater on until the setpoint])

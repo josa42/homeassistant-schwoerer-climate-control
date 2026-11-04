@@ -384,7 +384,7 @@ def test_a_room_left_to_the_heat_pump_is_watched_from_where_it_stands() -> None:
 
 
 def test_a_room_that_does_not_rise_on_warm_supply_air_gets_its_heater() -> None:
-    # The living room on 4 November: 22 K of lift and nowhere in 45 minutes.
+    # The living room on 4 November: 22 K of lift and nowhere in 30 minutes.
     inputs = given(supply_air=read(41.0), rooms=(a_cold_room(temperature=read(19.1)),))
     decision, state = run(inputs, state=left_to_the_heat_pump(19.0))
     room = decision.rooms[0]
@@ -408,10 +408,10 @@ def test_a_room_catching_up_on_warm_supply_air_starts_a_new_window() -> None:
 
 def test_a_room_is_given_the_whole_window_to_rise() -> None:
     inputs = given(supply_air=read(41.0), rooms=(a_cold_room(),))
-    state = left_to_the_heat_pump(19.0, since=NOON - timedelta(minutes=30))
-    decision, state = run(inputs, state=state)
+    since = NOON - AUX_PROGRESS_WINDOW + timedelta(minutes=1)
+    decision, state = run(inputs, state=left_to_the_heat_pump(19.0, since=since))
     assert decision.rooms[0].gate_passed("aux_not_catching_up") is False
-    assert state.aux_progress["wohnzimmer"].since == NOON - timedelta(minutes=30)
+    assert state.aux_progress["wohnzimmer"].since == since
 
 
 def test_a_heater_switched_on_for_a_stalled_room_holds_while_it_warms_the_room() -> None:

@@ -55,7 +55,7 @@ AUX_SUPPLY_HYSTERESIS = 1.0
 #: not a result: 22 K above the living room brought it nowhere on a 4 °C
 #: morning, because 40 m³/h at that lift is about 300 W. Estimates, see
 #: docs/todos/aux-heat-thresholds.md.
-AUX_PROGRESS_WINDOW = timedelta(minutes=45)
+AUX_PROGRESS_WINDOW = timedelta(minutes=30)
 AUX_PROGRESS_MIN_RISE = 0.2
 
 #: How long a state change waits for others to join it. A contact that chatters,

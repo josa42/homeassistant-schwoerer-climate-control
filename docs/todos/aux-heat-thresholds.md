@@ -9,7 +9,7 @@ first estimates, not measurements:
 | `aux_deficit` | 0.5 K | How far below its setpoint a room has to be before the heater is considered |
 | `aux_deficit_override` | 2 K | From this far below the setpoint the supply air no longer gets a say |
 | `AUX_DWELL` | 15 min | How long the heater has to be wanted before it is switched on |
-| `AUX_PROGRESS_WINDOW` | 45 min | How long a room left to the heat pump gets to rise |
+| `AUX_PROGRESS_WINDOW` | 30 min | How long a room left to the heat pump gets to rise |
 | `AUX_PROGRESS_MIN_RISE` | 0.2 K | How much it has to rise in that window |
 
 The margin is the one that matters. It rests on a back-of-the-envelope figure:
