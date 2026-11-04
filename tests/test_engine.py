@@ -10,6 +10,7 @@ import pytest
 
 from custom_components.schwoerer_climate_control.const import (
     AUX_DWELL,
+    AUX_PROGRESS_WINDOW,
     CONF_AUX_HEAT_OFF_AT_NIGHT,
     CONF_CO2_HIGH,
     CONF_FAN_AIR_QUALITY,
@@ -28,6 +29,7 @@ from custom_components.schwoerer_climate_control.const import (
     RoomReason,
 )
 from custom_components.schwoerer_climate_control.engine import (
+    AuxProgress,
     EngineState,
     Inputs,
     RoomInputs,
@@ -363,6 +365,81 @@ def test_lukewarm_supply_air_calls_for_the_auxiliary_heater() -> None:
     assert room.auxiliary_heat is True
     assert room.gate_passed("aux_supply_insufficient") is True
     assert "supply air only 2.0 K above it" in room.message
+
+
+def left_to_the_heat_pump(
+    temperature: float, *, since: datetime = NOON - AUX_PROGRESS_WINDOW
+) -> EngineState:
+    """State in which the room was left to the heat pump at this temperature."""
+    return EngineState(
+        aux_progress={"wohnzimmer": AuxProgress(since=since, temperature=temperature)}
+    )
+
+
+def test_a_room_left_to_the_heat_pump_is_watched_from_where_it_stands() -> None:
+    inputs = given(supply_air=read(41.0), rooms=(a_cold_room(),))
+    decision, state = run(inputs)
+    assert decision.rooms[0].gate_passed("aux_not_catching_up") is False
+    assert state.aux_progress == {"wohnzimmer": AuxProgress(since=NOON, temperature=19.0)}
+
+
+def test_a_room_that_does_not_rise_on_warm_supply_air_gets_its_heater() -> None:
+    # The living room on 4 November: 22 K of lift and nowhere in 45 minutes.
+    inputs = given(supply_air=read(41.0), rooms=(a_cold_room(temperature=read(19.1)),))
+    decision, state = run(inputs, state=left_to_the_heat_pump(19.0))
+    room = decision.rooms[0]
+    assert room.gate_passed("aux_not_catching_up") is True
+    assert room.auxiliary_heat is False, "the dwell still has its say"
+    assert "not catching up" in room.message
+    assert state.aux_progress["wohnzimmer"].stalled is True
+
+    later = replace(inputs, now=NOON + AUX_DWELL)
+    decision, _ = run(later, state=state)
+    assert decision.rooms[0].auxiliary_heat is True
+
+
+def test_a_room_catching_up_on_warm_supply_air_starts_a_new_window() -> None:
+    inputs = given(supply_air=read(41.0), rooms=(a_cold_room(temperature=read(19.3)),))
+    decision, state = run(inputs, state=left_to_the_heat_pump(19.0))
+    assert decision.rooms[0].auxiliary_heat is False
+    assert state.aux_progress == {"wohnzimmer": AuxProgress(since=NOON, temperature=19.3)}
+    assert state.aux_needed_since == {}
+
+
+def test_a_room_is_given_the_whole_window_to_rise() -> None:
+    inputs = given(supply_air=read(41.0), rooms=(a_cold_room(),))
+    state = left_to_the_heat_pump(19.0, since=NOON - timedelta(minutes=30))
+    decision, state = run(inputs, state=state)
+    assert decision.rooms[0].gate_passed("aux_not_catching_up") is False
+    assert state.aux_progress["wohnzimmer"].since == NOON - timedelta(minutes=30)
+
+
+def test_a_heater_switched_on_for_a_stalled_room_holds_while_it_warms_the_room() -> None:
+    # The heater's own heat makes the room rise, which says nothing about the
+    # heat pump, so the verdict stands until the room reaches its setpoint.
+    stalled = EngineState(
+        aux_progress={
+            "wohnzimmer": AuxProgress(
+                since=NOON - 2 * AUX_PROGRESS_WINDOW, temperature=19.0, stalled=True
+            )
+        }
+    )
+    running = a_cold_room(temperature=read(19.6), auxiliary_enabled=read(True))
+    decision, state = run(given(supply_air=read(41.0), rooms=(running,)), state=stalled)
+    assert decision.rooms[0].auxiliary_heat is True
+
+    there = replace(running, temperature=read(20.0))
+    decision, state = run(given(supply_air=read(41.0), rooms=(there,)), state=state)
+    assert decision.rooms[0].auxiliary_heat is False
+    assert state.aux_progress == {}
+
+
+def test_an_open_window_forgets_how_the_room_was_doing() -> None:
+    open_window = a_cold_room(contacts=(read(True),))
+    _, state = run(
+        given(supply_air=read(41.0), rooms=(open_window,)), state=left_to_the_heat_pump(19.0)
+    )
+    assert state.aux_progress == {}
 
 
 def test_a_room_far_below_its_setpoint_gets_heat_whatever_the_supply_air() -> None:

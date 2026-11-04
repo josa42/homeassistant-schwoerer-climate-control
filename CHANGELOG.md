@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **A room that warm supply air does not warm gets its auxiliary heater.** Supply
+  air well above the room used to leave it to the heat pump for as long as it
+  stayed short of its setpoint. Now the room has to rise by 0.2 K within
+  45 minutes. One that does not gets its heater after the usual 15 minutes, and
+  keeps it until the room reaches its setpoint.
+
 ## 1.4.0 - 2026-11-03
 
 ### Added

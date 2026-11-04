@@ -21,6 +21,8 @@ from typing import Any
 
 from .const import (
     AUX_DWELL,
+    AUX_PROGRESS_MIN_RISE,
+    AUX_PROGRESS_WINDOW,
     AUX_SUPPLY_HYSTERESIS,
     CO2_DWELL,
     CONF_AUX_DEFICIT,
@@ -129,6 +131,18 @@ class Inputs:
 
 
 @dataclass(frozen=True, slots=True)
+class AuxProgress:
+    """Where a room stood when it was left to the heat pump, and what came of it."""
+
+    since: datetime
+    temperature: float
+    #: Set once the room failed to rise in time. It holds until the room stops
+    #: waiting for heat, because with the heater on its rise says nothing about
+    #: the heat pump any more.
+    stalled: bool = False
+
+
+@dataclass(frozen=True, slots=True)
 class EngineState:
     """Runtime state carried between evaluations.
 
@@ -141,6 +155,8 @@ class EngineState:
     #: Per room, since when its auxiliary heater has been wanted and not yet
     #: switched on.
     aux_needed_since: Mapping[str, datetime] = field(default_factory=dict)
+    #: Per room left to the heat pump, whether it is catching up.
+    aux_progress: Mapping[str, AuxProgress] = field(default_factory=dict)
 
 
 def _parse_time(value: str) -> time:
@@ -450,24 +466,65 @@ def _cool_wanted(
     return True, Reason.COOL_RELEASED, gates, whose
 
 
+def _aux_progress(
+    progress: AuxProgress | None, *, now: datetime, temperature: float
+) -> tuple[AuxProgress, bool, str]:
+    """Whether a room left to the heat pump has stopped catching up.
+
+    Each window that ends with the room high enough above where it started
+    begins the next one from there, so a room that rises slowly but steadily is
+    never called stalled on the strength of an old reading.
+    """
+    window = AUX_PROGRESS_WINDOW.total_seconds() / 60
+    if progress is None:
+        return (
+            AuxProgress(since=now, temperature=temperature),
+            False,
+            f"watching from {temperature} °C, at least {AUX_PROGRESS_MIN_RISE} K "
+            f"in {window:.0f} min",
+        )
+    rise = round(temperature - progress.temperature, 2)
+    elapsed = now - progress.since
+    detail = (
+        f"{rise:+.1f} K in {elapsed.total_seconds() / 60:.0f} min, "
+        f"at least {AUX_PROGRESS_MIN_RISE} K in {window:.0f} min"
+    )
+    if progress.stalled:
+        return progress, True, detail
+    if elapsed < AUX_PROGRESS_WINDOW:
+        return progress, False, detail
+    if rise < AUX_PROGRESS_MIN_RISE:
+        return replace(progress, stalled=True), True, detail
+    return AuxProgress(since=now, temperature=temperature), False, detail
+
+
 def _aux_needed(
     config: EffectiveConfig,
     *,
+    now: datetime,
     temperature: float,
     target: float,
     supply: float | None,
     running: bool,
-) -> tuple[bool, list[Gate], str]:
+    progress: AuxProgress | None,
+) -> tuple[bool, list[Gate], str, AuxProgress | None]:
     """Whether a room needs more heat than the supply air is bringing it.
 
     The heat pump heats the supply air, so a room that is short of its setpoint
-    while the supply air arrives well above it is one that is catching up. Its
-    auxiliary heater would only spend electricity on what is coming anyway. One
-    whose supply air is barely warmer than the room, because the heat pump is at
-    its limit, defrosting or standing still, is one the ventilation cannot warm.
+    while the supply air arrives well above it may be one that is catching up.
+    Its auxiliary heater would only spend electricity on what is coming anyway.
+    One whose supply air is barely warmer than the room, because the heat pump
+    is at its limit, defrosting or standing still, is one the ventilation cannot
+    warm.
 
-    Both tests hold on once the heater runs: it stays on until the room reaches
-    its setpoint or the supply air clears the margin by a further kelvin.
+    Warm supply air is not proof, though: what it carries into a room can be
+    less than the room loses. So a room left to the heat pump has to show it,
+    by rising within a window, and one that does not gets its heater.
+
+    The tests hold on once the heater runs: it stays on until the room reaches
+    its setpoint, or until the supply air clears the margin by a further kelvin
+    when it was the supply air that switched it on. The last value is the
+    progress to carry, ``None`` once the room is not waiting on the heat pump.
     """
     deficit = round(target - temperature, 2)
     start = config.number(CONF_AUX_DEFICIT)
@@ -483,7 +540,7 @@ def _aux_needed(
         )
     ]
     if not below:
-        return False, gates, ""
+        return False, gates, "", None
 
     if deficit >= override:
         # However warm the supply air, a room this far off is not catching up
@@ -491,13 +548,13 @@ def _aux_needed(
         gates.append(
             Gate("aux_override", True, f"{deficit:.1f} K short, at least {override} K")
         )
-        return True, gates, f"the room is {deficit:.1f} K short"
+        return True, gates, f"the room is {deficit:.1f} K short", None
 
     if supply is None:
         # Not knowing the supply air leaves the decision to the room, which is
         # what it was before the supply air was considered.
         gates.append(Gate("aux_supply_insufficient", True, "no supply air reading"))
-        return True, gates, f"the room is {deficit:.1f} K short"
+        return True, gates, f"the room is {deficit:.1f} K short", None
 
     lift = round(supply - temperature, 2)
     limit = margin + AUX_SUPPLY_HYSTERESIS if running else margin
@@ -509,10 +566,24 @@ def _aux_needed(
             f"supply air {supply} °C, {lift:.1f} K above the room, limit {limit} K",
         )
     )
+    if insufficient:
+        return (
+            True,
+            gates,
+            f"the room is {deficit:.1f} K short and the supply air only {lift:.1f} K above it",
+            None,
+        )
+
+    progress, stalled, detail = _aux_progress(progress, now=now, temperature=temperature)
+    gates.append(Gate("aux_not_catching_up", stalled, detail))
+    if not stalled:
+        return False, gates, "", progress
     return (
-        insufficient,
+        True,
         gates,
-        f"the room is {deficit:.1f} K short and the supply air only {lift:.1f} K above it",
+        f"the room is {deficit:.1f} K short and not catching up with the supply air "
+        f"{lift:.1f} K above it",
+        progress,
     )
 
 
@@ -555,11 +626,13 @@ def _room_decision(
     surplus: bool,
     supply: float | None = None,
     aux_since: datetime | None = None,
-) -> tuple[RoomDecision, bool]:
+    aux_progress: AuxProgress | None = None,
+) -> tuple[RoomDecision, bool, AuxProgress | None]:
     """Decide one room's setpoint and whether its auxiliary heater may run.
 
     The second value says whether the auxiliary heater is wanted, before the
-    dwell time has had its say, so that the caller can carry the timer.
+    dwell time has had its say, so that the caller can carry the timer. The
+    third is the room's progress on the heat pump alone, carried the same way.
     """
     config = EffectiveConfig(hub, room.config)
     settings = config.snapshot()
@@ -579,7 +652,7 @@ def _room_decision(
             message="Controller is off, nothing is written",
             inputs=raw,
             settings=settings,
-        ), False
+        ), False, None
 
     window_open, failed_contacts = _window_open(room.contacts)
     night = _is_night(config, now)
@@ -644,6 +717,7 @@ def _room_decision(
     auxiliary: bool | None = None
     heating_enabled: bool | None = None
     wanted = False
+    progress: AuxProgress | None = None
     aux_why = ""
     aux_waiting: timedelta | None = None
     if room.actuator is ActuatorKind.WGT_ROOM:
@@ -677,14 +751,21 @@ def _room_decision(
 
         needed = False
         if temperature is not None:
-            needed, need_gates, aux_why = _aux_needed(
+            needed, need_gates, aux_why, progress = _aux_needed(
                 config,
+                now=now,
                 temperature=temperature,
                 target=target,
                 supply=supply,
                 running=running,
+                progress=aux_progress,
             )
             gates.extend(need_gates)
+        if not allowed:
+            # A room the heater may not serve is not waiting on the heat pump
+            # either, and a window or a withdrawn release says nothing about
+            # how well the heat pump does.
+            progress = None
 
         wanted = allowed and needed
         auxiliary = wanted
@@ -736,7 +817,7 @@ def _room_decision(
         settings=settings,
         degraded=tuple(degraded),
     )
-    return decision, wanted
+    return decision, wanted, progress
 
 
 def _room_message(
@@ -968,6 +1049,7 @@ def evaluate(
         # expensive heat in the house on an old timer is the wrong way to err.
         # Replaced once the rooms decide.
         aux_needed_since={},
+        aux_progress={},
     )
     config = EffectiveConfig(hub)
     raw = {
@@ -1089,16 +1171,22 @@ def evaluate(
             surplus=surplus,
             supply=supply,
             aux_since=state.aux_needed_since.get(room.room_id),
+            aux_progress=state.aux_progress.get(room.room_id),
         )
         for room in inputs.rooms
     ]
-    rooms = tuple(room for room, _ in decided)
+    rooms = tuple(room for room, _, _ in decided)
     new_state = replace(
         new_state,
         aux_needed_since={
             room.room_id: state.aux_needed_since.get(room.room_id, inputs.now)
-            for room, wanted in decided
+            for room, wanted, _ in decided
             if wanted
+        },
+        aux_progress={
+            room.room_id: progress
+            for room, _, progress in decided
+            if progress is not None
         },
     )
     for room in rooms:

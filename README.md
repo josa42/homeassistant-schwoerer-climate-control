@@ -173,12 +173,36 @@ when the heat pump cannot get the room warm on its own. All of this has to hold:
   night,
 - the room is at least *auxiliary heat from this far below target* (0.5 K) short
   of its setpoint,
-- and the supply air arrives less than *supply air counts as heating* (5 K) above
-  the room. Supply air well above the room is the heat pump bringing the heat
-  already, and the room is left to catch up.
+- and the heat pump is not getting the room there on its own: either the supply
+  air arrives less than *supply air counts as heating* (5 K) above the room, or
+  the room has been left to it for 45 minutes and has not risen by 0.2 K.
+
+Warm supply air is a promise rather than a result. On a 4 °C morning the living
+room got air 22 K above it for four hours and ended up cooler than it started,
+because 40 m³/h at that lift is about 300 W. So a room the supply air would
+leave to the heat pump is watched, and each window it rises in starts the next
+one from there. A room that stalls keeps that verdict until it reaches its
+setpoint, since the heater's own heat makes the room rise and says nothing about
+the heat pump. A window opening, the release being withdrawn or a restart of
+Home Assistant forgets the progress, and the watch starts over.
 
 From *auxiliary heat regardless* (2 K) short the supply air no longer gets a say.
 Without a supply air reading the room decides alone.
+
+```mermaid
+flowchart TD
+    gates{Heating released, colder than 10 °C outside,<br/>window shut, heater allowed at this hour?} -->|no| off([Heater off])
+    gates -->|yes| short{How far below<br/>its setpoint?}
+    short -->|less than 0.5 K| off
+    short -->|2 K or more| dwell
+    short -->|0.5 to 2 K| supply{Supply air more than<br/>5 K above the room?}
+    supply -->|no, or no reading| dwell
+    supply -->|yes| rising{Risen 0.2 K in the<br/>last 45 minutes?}
+    rising -->|yes, or not 45 minutes yet| wait([Left to the heat pump])
+    rising -->|no| dwell{Wanted for<br/>15 minutes?}
+    dwell -->|no| off
+    dwell -->|yes| on([Heater on until the setpoint])
+```
 
 A heater is only switched on once it has been wanted for 15 minutes, so a door
 left open for a minute or the supply air dipping while the heat pump defrosts
@@ -193,7 +217,7 @@ leaves the register alone. An existing setup finds it suggested under
 **Configure** → **Entities**; an entity cleared there stays cleared and is not
 suggested again.
 
-The three thresholds are first estimates, see
+The thresholds and the progress window are first estimates, see
 [docs/todos/aux-heat-thresholds.md](docs/todos/aux-heat-thresholds.md).
 
 Cooling with the compressor only runs while there is energy to spare. It is the
