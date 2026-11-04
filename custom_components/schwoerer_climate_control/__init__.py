@@ -33,7 +33,7 @@ CARDS_URL_PATH = f"/{DOMAIN}/{CARDS_FILENAME}"
 #: Kept in step with the manifest by the release script, and served as a query
 #: string, so a browser does not keep running the strategy it cached before an
 #: upgrade.
-STRATEGY_VERSION = "1.6.0"
+STRATEGY_VERSION = "1.7.0"
 
 PLATFORMS: list[Platform] = [
     Platform.BINARY_SENSOR,
