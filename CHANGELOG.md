@@ -39,7 +39,7 @@
   was reported as refused. Only a write sent again with the same value counts
   now.
 
-## Unreleased
+## 1.6.0 - 2026-11-04
 
 ### Changed
 
