@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from datetime import timedelta
+from types import SimpleNamespace
 
 import pytest
 from homeassistant.config_entries import ConfigSubentryData
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, State
 from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
@@ -15,6 +16,7 @@ from pytest_homeassistant_custom_component.common import (
 
 from custom_components.schwoerer_climate_control.const import (
     CONF_AUX_HOUSE_SWITCH,
+    CONF_SUPPLY_AIR_SENSOR,
     DOMAIN,
     STUCK_AFTER,
     SUBENTRY_TYPE_ROOM,
@@ -436,3 +438,94 @@ async def test_the_house_release_goes_off_after_the_room(
     assert order.index((THERMOSTAT, "set_hvac_mode")) < order.index(
         (AUX_HOUSE, "turn_off")
     )
+
+
+SUPPLY_AIR = "sensor.supply_air"
+
+
+@pytest.fixture
+def start_with_history(hass: HomeAssistant, unit, monkeypatch: pytest.MonkeyPatch):
+    """A controller started over a recorder that saw the room at `earlier` °C."""
+
+    async def _start(earlier: float, **scene):
+        hass.config.components.add("recorder")
+        recorder = SimpleNamespace(async_add_executor_job=hass.async_add_executor_job)
+        monkeypatch.setattr(
+            "custom_components.schwoerer_climate_control.coordinator.get_instance",
+            lambda _hass: recorder,
+        )
+        monkeypatch.setattr(
+            "custom_components.schwoerer_climate_control.coordinator.history",
+            SimpleNamespace(
+                get_significant_states=lambda *_args, **_kwargs: {
+                    THERMOSTAT: [
+                        State(THERMOSTAT, "fan_only", {"current_temperature": earlier})
+                    ]
+                }
+            ),
+        )
+        unit(**scene)
+        hass.states.async_set(SUPPLY_AIR, "40.0")
+        mock_entry = MockConfigEntry(
+            domain=DOMAIN,
+            title="Schwörer Climate Control",
+            data={**HUB_DATA, CONF_SUPPLY_AIR_SENSOR: SUPPLY_AIR},
+            subentries_data=[
+                ConfigSubentryData(
+                    data=ROOM_DATA,
+                    subentry_type=SUBENTRY_TYPE_ROOM,
+                    title="Wohnzimmer",
+                    unique_id=None,
+                )
+            ],
+        )
+        mock_entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(mock_entry.entry_id)
+        await hass.async_block_till_done()
+        coordinator = mock_entry.runtime_data
+        # The mode restores after the first evaluation, as on a real start.
+        await coordinator.async_set_mode(Mode.HEATING)
+        await hass.async_block_till_done()
+        return coordinator.engine_state.aux_progress["wohnzimmer"]
+
+    return _start
+
+
+async def test_a_restart_judges_the_room_on_what_the_recorder_saw(
+    start_with_history,
+) -> None:
+    # Warm supply air and nowhere in the last window: no second wait after a
+    # restart before the heater's dwell can start.
+    progress = await start_with_history(19.0, current=19.0)
+    assert progress.stalled is True
+
+
+async def test_a_room_that_rose_before_the_restart_is_left_to_the_heat_pump(
+    start_with_history,
+) -> None:
+    progress = await start_with_history(18.7, current=19.0)
+    assert progress.stalled is False
+    assert progress.temperature == 19.0, "the next window starts from here"
+
+
+async def test_a_room_with_its_heater_on_is_watched_afresh(
+    start_with_history,
+) -> None:
+    # Its rise is the heater's, so the recorder says nothing about the heat pump.
+    progress = await start_with_history(19.0, current=19.0, hvac_mode="heat")
+    assert progress.stalled is False
+    assert progress.since > dt_util.utcnow() - timedelta(minutes=1)
+
+
+async def test_the_head_start_is_not_offered_for_long(
+    start_with_history, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A room the engine only starts watching later, say after a window was open,
+    # must not be judged on the temperature from before.
+    monkeypatch.setattr(
+        "custom_components.schwoerer_climate_control.coordinator.RESUME_OFFERED_FOR",
+        timedelta(0),
+    )
+    progress = await start_with_history(19.0, current=19.0)
+    assert progress.stalled is False
+    assert progress.since > dt_util.utcnow() - timedelta(minutes=1)

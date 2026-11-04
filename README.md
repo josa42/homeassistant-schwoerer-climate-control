@@ -183,8 +183,10 @@ because 40 m³/h at that lift is about 300 W. So a room the supply air would
 leave to the heat pump is watched, and each window it rises in starts the next
 one from there. A room that stalls keeps that verdict until it reaches its
 setpoint, since the heater's own heat makes the room rise and says nothing about
-the heat pump. A window opening, the release being withdrawn or a restart of
-Home Assistant forgets the progress, and the watch starts over.
+the heat pump. A window opening or the release being withdrawn forgets the
+progress, and the watch starts over. A restart of Home Assistant does not: the
+first window starts from the room's temperature 30 minutes earlier, read from
+the recorder, unless the heater is on at the time.
 
 From *auxiliary heat regardless* (2 K) short the supply air no longer gets a say.
 Without a supply air reading the room decides alone.

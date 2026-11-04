@@ -5,6 +5,7 @@
     "frontend",
     "http",
     "logbook",
+    "recorder",
     "schwoerer_lueftung",
     "weather"
   ],

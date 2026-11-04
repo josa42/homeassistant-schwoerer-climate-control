@@ -8,6 +8,12 @@
   the heat pump now counts as not catching up after half an hour without
   rising by 0.2 K, and gets its heater 15 minutes later.
 
+- **A restart no longer holds a room's heater back.** The watch on a room left
+  to the heat pump used to start over with every restart of Home Assistant, so a
+  room that was not warming waited a whole window again. Its first window now
+  starts from the temperature the recorder saw half an hour earlier. A room
+  whose heater is on at the time is still watched afresh.
+
 ## 1.4.1 - 2026-11-04
 
 ### Changed

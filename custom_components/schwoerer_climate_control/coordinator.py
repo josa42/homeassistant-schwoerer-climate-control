@@ -22,10 +22,12 @@ import logging
 from collections import deque
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
+from functools import partial
 from typing import Any
 
 import voluptuous as vol
 from homeassistant.components.climate.const import HVACMode
+from homeassistant.components.recorder import get_instance, history
 from homeassistant.config_entries import ConfigEntry, ConfigSubentry
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import (
@@ -33,6 +35,7 @@ from homeassistant.core import (
     Event,
     EventStateChangedData,
     HomeAssistant,
+    State,
     callback,
 )
 from homeassistant.exceptions import HomeAssistantError
@@ -53,6 +56,7 @@ from homeassistant.util import slugify
 
 from .adapters import Write, generic, schwoerer
 from .const import (
+    AUX_PROGRESS_WINDOW,
     CONF_ACTUATOR,
     CONF_BYPASS_SENSOR,
     CONF_CLIMATE_ENTITY,
@@ -96,7 +100,7 @@ from .const import (
     Reason,
 )
 from .discovery import discover_unit
-from .engine import EngineState, Inputs, RoomInputs, evaluate
+from .engine import AuxProgress, EngineState, Inputs, RoomInputs, evaluate
 from .models import Reading, SystemDecision
 
 _LOGGER = logging.getLogger(__name__)
@@ -106,6 +110,11 @@ type ClimateControlConfigEntry = ConfigEntry[ClimateControlCoordinator]
 #: What the unit's operating mode has to read for the decisions to hold. Written
 #: by nobody here; a repair says so when it reads something else.
 REQUIRED_OPERATION_MODE = "manual"
+
+#: How long after a start the recorder's head start is offered. Long enough for
+#: the controls to restore, short enough that a room the engine only starts
+#: watching later, after a window, is not judged on the temperature from before.
+RESUME_OFFERED_FOR = timedelta(minutes=5)
 
 
 @dataclass(slots=True)
@@ -165,6 +174,10 @@ class ClimateControlCoordinator(DataUpdateCoordinator[SystemDecision]):
         self.dry_run = bool({**entry.data, **entry.options}.get(CONF_DRY_RUN, True))
 
         self.engine_state = EngineState()
+        # Where the recorder last saw each room, offered to the engine until it
+        # takes it up or it goes stale. See async_resume_aux_progress.
+        self._resumed: dict[str, AuxProgress] = {}
+        self._resumed_until: datetime | None = None
         self._unsubscribe: list[Any] = []
         self._last_write: datetime | None = None
         self._attempted: set[str] = set()
@@ -323,14 +336,7 @@ class ClimateControlCoordinator(DataUpdateCoordinator[SystemDecision]):
         state = None
         if entity := room.climate_entity:
             state = self.hass.states.get(entity)
-        if state is None:
-            return Reading()
-        value = state.attributes.get("current_temperature")
-        if value is None:
-            return Reading()
-        try:
-            value = float(value)
-        except (TypeError, ValueError):
+        if state is None or (value := _temperature(state, attribute=True)) is None:
             return Reading()
         now = dt_util.utcnow()
         return Reading(value=value, updated_ago=now - state.last_updated)
@@ -352,6 +358,71 @@ class ClimateControlCoordinator(DataUpdateCoordinator[SystemDecision]):
             value=str(reading.value) == HVACMode.HEAT,
             updated_ago=reading.updated_ago,
             stable_for=reading.stable_for,
+        )
+
+    async def async_resume_aux_progress(self) -> None:
+        """Pick up each room's watch where the recorder last saw it.
+
+        Without this, every restart would hold a stalled room's heater back for
+        a whole window while the engine watches it from scratch. The recorder
+        has already watched it, so the first window starts from the room's
+        temperature one window ago. A room whose heater is on, or might be, is
+        left out, since its rise is the heater's and says nothing about the
+        heat pump.
+
+        The engine only watches a room while it is heating, and the mode is
+        restored by its select after the first evaluation. So this is held
+        aside and offered for a few minutes rather than put into the state,
+        where that first evaluation would drop it.
+        """
+        if "recorder" not in self.hass.config.components:
+            return
+        sources: dict[str, tuple[str, bool]] = {}
+        for room in self.rooms.values():
+            released = self._auxiliary_enabled(room)
+            if released is not None and released.value is not False:
+                continue
+            if sensor := room.config.get(CONF_TEMPERATURE_SENSOR):
+                sources[room.room_id] = (sensor, False)
+            elif room.climate_entity:
+                sources[room.room_id] = (room.climate_entity, True)
+        if not sources:
+            return
+
+        since = dt_util.utcnow() - AUX_PROGRESS_WINDOW
+        try:
+            states = await get_instance(self.hass).async_add_executor_job(
+                partial(
+                    history.get_significant_states,
+                    self.hass,
+                    since,
+                    since + timedelta(seconds=1),
+                    list({entity for entity, _ in sources.values()}),
+                    include_start_time_state=True,
+                    significant_changes_only=False,
+                )
+            )
+        except Exception as err:  # noqa: BLE001
+            # Only a head start. Without it the watch starts over, as it did
+            # before.
+            _LOGGER.warning("Could not read the room temperatures back: %s", err)
+            return
+
+        for room_id, (entity, attribute) in sources.items():
+            found = states.get(entity) or [None]
+            if (value := _temperature(found[0], attribute=attribute)) is not None:
+                self._resumed[room_id] = AuxProgress(since=since, temperature=value)
+        self._resumed_until = dt_util.utcnow() + RESUME_OFFERED_FOR
+
+    def _with_resumed_progress(self) -> EngineState:
+        """The engine state, with the recorder's head start for rooms not yet watched."""
+        if self._resumed and self._resumed_until and dt_util.utcnow() > self._resumed_until:
+            self._resumed = {}
+        if not self._resumed:
+            return self.engine_state
+        return replace(
+            self.engine_state,
+            aux_progress={**self._resumed, **self.engine_state.aux_progress},
         )
 
     async def _forecast_max(self) -> Reading | None:
@@ -454,12 +525,18 @@ class ClimateControlCoordinator(DataUpdateCoordinator[SystemDecision]):
         decision, self.engine_state = evaluate(
             inputs,
             self.hub_config,
-            self.engine_state,
+            self._with_resumed_progress(),
             enabled=self.enabled,
             mode=self.mode,
             fan_request=self.fan_request,
             holiday=self.holiday,
         )
+        # A head start is used once. Taken up, the engine carries it on.
+        self._resumed = {
+            room_id: progress
+            for room_id, progress in self._resumed.items()
+            if room_id not in self.engine_state.aux_progress
+        }
         # Logged before writing, so the entry exists as the origin of the context
         # the writes are sent under.
         self._log_changes(decision)
@@ -900,6 +977,17 @@ class ClimateControlCoordinator(DataUpdateCoordinator[SystemDecision]):
             unsubscribe()
         self._unsubscribe.clear()
         await super().async_shutdown()
+
+
+def _temperature(state: State | None, *, attribute: bool) -> float | None:
+    """A temperature from a sensor's state or a thermostat's attribute."""
+    if state is None:
+        return None
+    value = state.attributes.get("current_temperature") if attribute else state.state
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _subentry_title(subentry: ConfigSubentry) -> str:

@@ -72,6 +72,7 @@ async def async_setup_entry(
     coordinator.register_hub_device()
     entry.runtime_data = coordinator
 
+    await coordinator.async_resume_aux_progress()
     await coordinator.async_config_entry_first_refresh()
     await coordinator.async_start_watching()
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
