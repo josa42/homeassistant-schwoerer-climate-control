@@ -202,16 +202,17 @@ def _quantize(value: float) -> float:
 def _window_open(contacts: tuple[Reading, ...]) -> tuple[bool, list[str]]:
     """Whether any contact reports open, and which ones could not be read.
 
-    A contact that cannot be read counts as open. Heating against an open
-    window is the more expensive mistake, and a dead reed switch is exactly the
-    failure that hid in v1.
+    A contact that cannot be read counts as closed. Taking it for open would
+    let a flat battery, or a Zigbee contact gone for a minute while Home
+    Assistant starts, turn the room's heating down. It is named as missing, and
+    a repair follows once it stays unreadable, which is where a dead reed
+    switch shows up instead of hiding the way it did in v1.
     """
     failed: list[str] = []
     is_open = False
     for index, contact in enumerate(contacts):
         if contact.missing:
             failed.append(f"contact[{index}]")
-            is_open = True
             continue
         if not contact.value:
             continue

@@ -2,6 +2,17 @@
 
 ## 1.5.0 - 2026-11-04
 
+### Fixed
+
+- **A contact that cannot be read counts as closed.** It used to count as an
+  open window at once, and Zigbee contacts are unavailable for about a minute
+  while Home Assistant starts, so every room they guard was set to 12 °C and
+  back on each restart. A failed contact now leaves the heating alone. It is
+  still listed under *Inputs missing* straight away, and a repair follows after
+  an hour.
+
+## Unreleased
+
 ### Changed
 
 - **A room has 30 minutes to rise, not 45.** A room warm supply air leaves to

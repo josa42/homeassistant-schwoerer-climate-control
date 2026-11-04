@@ -213,13 +213,15 @@ def test_a_stale_outdoor_reading_falls_back_to_ventilation() -> None:
     assert "outdoor" in decision.degraded
 
 
-def test_an_unreadable_contact_counts_as_an_open_window() -> None:
+def test_an_unreadable_contact_counts_as_closed() -> None:
+    # A flat battery, or a Zigbee contact gone while Home Assistant starts, must
+    # not turn the heating down. It is named instead.
     inputs = given(rooms=(a_room(contacts=(Reading(),)),))
     decision, _ = run(inputs)
     room = decision.rooms[0]
-    assert room.window_open is True
-    assert room.reason is RoomReason.WINDOW_OPEN
-    assert room.target_temperature == 12.0
+    assert room.window_open is False
+    assert room.target_temperature == 20.0
+    assert room.gate_passed("window_closed") is True
     assert "wohnzimmer.contact[0]" in decision.degraded
 
 

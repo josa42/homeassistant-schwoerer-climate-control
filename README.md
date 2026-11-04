@@ -296,10 +296,12 @@ decided that, so why has nothing happened".
 **Inputs missing** turns on as soon as something the controller was told to read
 cannot be read, and names it: `wohnzimmer.co2`, `badezimmer.contact[0]`. Each
 class of input then falls back to a documented answer rather than disappearing. A
-contact that cannot be read counts as open, a missing outdoor reading falls back
-to ventilation, and a dead humidity or CO₂ sensor only takes its own rule out.
-v1 skipped all of these silently, which is how a flat battery turned into a room
-that was heated against an open window.
+contact that cannot be read counts as closed, so a flat battery or a Zigbee
+contact gone while Home Assistant starts never turns a room's heating down; a
+missing outdoor reading falls back to ventilation, and a dead humidity or CO₂
+sensor only takes its own rule out. v1 skipped all of these silently, which is
+how a flat battery went unnoticed. Here it is named at once, and a repair
+follows after an hour.
 
 Four things raise a repair: the unit left manual mode, a configured input has
 been unreadable for an hour, a register will not take its value, and the
