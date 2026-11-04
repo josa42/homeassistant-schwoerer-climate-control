@@ -625,6 +625,7 @@ def _room_decision(
     heating_active: bool,
     outdoor: float | None,
     surplus: bool,
+    night_setback: bool = True,
     supply: float | None = None,
     aux_since: datetime | None = None,
     aux_progress: AuxProgress | None = None,
@@ -672,7 +673,12 @@ def _room_decision(
             not window_open,
             "contact unreadable" if failed_contacts else ("open" if window_open else "closed"),
         ),
-        Gate("night", night, f"{config.get(CONF_NIGHT_START)} to {config.get(CONF_NIGHT_END)}"),
+        Gate(
+            "night",
+            night,
+            f"{config.get(CONF_NIGHT_START)} to {config.get(CONF_NIGHT_END)}"
+            + ("" if night_setback else ", setback off"),
+        ),
     ]
 
     if mode is Mode.COOLING:
@@ -692,7 +698,7 @@ def _room_decision(
         elif holiday:
             target = config.number(CONF_TARGET_HOLIDAY)
             intent, reason = RoomIntent.HOLIDAY, RoomReason.HOLIDAY
-        elif night:
+        elif night and night_setback:
             target = config.number(CONF_TARGET_NIGHT)
             intent, reason = RoomIntent.NIGHT, RoomReason.NIGHT_SETBACK
         else:
@@ -1036,8 +1042,13 @@ def evaluate(
     mode: Mode,
     fan_request: FanMode | int,
     holiday: bool,
+    night_setback: bool = True,
 ) -> tuple[SystemDecision, EngineState]:
-    """Evaluate the unit and every room, and return the decision plus state."""
+    """Evaluate the unit and every room, and return the decision plus state.
+
+    Without the night setback the rooms keep their day setpoint at night. The
+    night still counts for everything else, the fan stage among it.
+    """
     # The dwell timers are carried forward before anything can return early, so
     # that a controller switched off for ten minutes does not come back with a
     # fresh timer and a fan that has forgotten the bathroom.
@@ -1170,6 +1181,7 @@ def evaluate(
             heating_active=bool(heating_active),
             outdoor=outdoor,
             surplus=surplus,
+            night_setback=night_setback,
             supply=supply,
             aux_since=state.aux_needed_since.get(room.room_id),
             aux_progress=state.aux_progress.get(room.room_id),

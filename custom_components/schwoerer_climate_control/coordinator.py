@@ -101,7 +101,7 @@ from .const import (
 )
 from .discovery import discover_unit
 from .engine import AuxProgress, EngineState, Inputs, RoomInputs, evaluate
-from .models import Reading, SystemDecision
+from .models import EffectiveConfig, Reading, SystemDecision
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -172,6 +172,11 @@ class ClimateControlCoordinator(DataUpdateCoordinator[SystemDecision]):
         # Starts from the configuration and is then held here, so the switch can
         # turn it off without a reload. On for a fresh install.
         self.dry_run = bool({**entry.data, **entry.options}.get(CONF_DRY_RUN, True))
+        self.night_setback = True
+        # The values the room and hub entities hold, over the configuration they
+        # started from. Empty until the entities have restored.
+        self.hub_settings: dict[str, Any] = {}
+        self.room_settings: dict[str, dict[str, Any]] = {}
 
         self.engine_state = EngineState()
         # Where the recorder last saw each room, offered to the engine until it
@@ -205,6 +210,14 @@ class ClimateControlCoordinator(DataUpdateCoordinator[SystemDecision]):
     def hub_config(self) -> dict[str, Any]:
         """The hub's settings, options layered over the initial data."""
         return {**self.entry.data, **self.entry.options}
+
+    def setting(self, key: str, room: RoomRuntime | None = None) -> Any:
+        """The value a setting resolves to before any entity has set it.
+
+        What an entity starts from the first time it exists: the room's own
+        value, the hub's, or the default.
+        """
+        return EffectiveConfig(self.hub_config, room.config if room else None).get(key)
 
     def load_rooms(self) -> None:
         """Rebuild the room runtimes from the entry's subentries."""
@@ -263,6 +276,33 @@ class ClimateControlCoordinator(DataUpdateCoordinator[SystemDecision]):
     async def async_set_dry_run(self, dry_run: bool) -> None:
         self.dry_run = dry_run
         self._act_now()
+
+    async def async_set_night_setback(self, night_setback: bool) -> None:
+        self.night_setback = night_setback
+        self._act_now()
+
+    async def async_set_hub_setting(
+        self, key: str, value: Any, *, restoring: bool = False
+    ) -> None:
+        self.hub_settings[key] = value
+        await self._after_setting(restoring)
+
+    async def async_set_room_setting(
+        self, room_id: str, key: str, value: Any, *, restoring: bool = False
+    ) -> None:
+        self.room_settings.setdefault(room_id, {})[key] = value
+        await self._after_setting(restoring)
+
+    async def _after_setting(self, restoring: bool) -> None:
+        """Act on a changed setting.
+
+        A dozen of them restore within a second of each other at startup, which
+        is one evaluation rather than a dozen. A hand on a control acts at once.
+        """
+        if restoring:
+            await self.async_request_refresh()
+        else:
+            self._act_now()
 
     ############################################################################
     # Reading
@@ -461,7 +501,7 @@ class ClimateControlCoordinator(DataUpdateCoordinator[SystemDecision]):
             RoomInputs(
                 room_id=room.room_id,
                 name=room.title,
-                config=room.config,
+                config={**room.config, **self.room_settings.get(room.room_id, {})},
                 temperature=self._room_temperature(room),
                 contacts=tuple(
                     reading
@@ -524,12 +564,13 @@ class ClimateControlCoordinator(DataUpdateCoordinator[SystemDecision]):
         inputs = await self._gather()
         decision, self.engine_state = evaluate(
             inputs,
-            self.hub_config,
+            {**self.hub_config, **self.hub_settings},
             self._with_resumed_progress(),
             enabled=self.enabled,
             mode=self.mode,
             fan_request=self.fan_request,
             holiday=self.holiday,
+            night_setback=self.night_setback,
         )
         # A head start is used once. Taken up, the engine carries it on.
         self._resumed = {

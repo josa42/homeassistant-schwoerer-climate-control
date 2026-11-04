@@ -1,4 +1,4 @@
-"""The three switches that say what the controller may do."""
+"""The switches that say what the controller may do."""
 
 from __future__ import annotations
 
@@ -21,7 +21,12 @@ async def async_setup_entry(
 ) -> None:
     coordinator = entry.runtime_data
     async_add_entities(
-        [ActiveSwitch(coordinator), HolidaySwitch(coordinator), DryRunSwitch(coordinator)]
+        [
+            ActiveSwitch(coordinator),
+            HolidaySwitch(coordinator),
+            NightSetbackSwitch(coordinator),
+            DryRunSwitch(coordinator),
+        ]
     )
 
 
@@ -75,6 +80,34 @@ class HolidaySwitch(HubEntity, SwitchEntity, RestoreEntity):
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         await self.coordinator.async_set_holiday(False)
+        self.async_write_ha_state()
+
+
+class NightSetbackSwitch(HubEntity, SwitchEntity, RestoreEntity):
+    """Whether the rooms drop to their night setpoint at night.
+
+    Off, they keep their day setpoint. The night still counts for the rest, so
+    the fan runs its night stage either way.
+    """
+
+    def __init__(self, coordinator: ClimateControlCoordinator) -> None:
+        super().__init__(coordinator, "night_setback")
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        if (last := await self.async_get_last_state()) is not None:
+            await self.coordinator.async_set_night_setback(last.state == STATE_ON)
+
+    @property
+    def is_on(self) -> bool:
+        return self.coordinator.night_setback
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        await self.coordinator.async_set_night_setback(True)
+        self.async_write_ha_state()
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        await self.coordinator.async_set_night_setback(False)
         self.async_write_ha_state()
 
 

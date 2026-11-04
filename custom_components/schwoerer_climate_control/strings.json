@@ -93,8 +93,8 @@
       "thresholds": {
         "title": "Temperatures, thresholds and fan levels",
         "data": {
-          "target_normal": "Target temperature",
-          "target_night": "Target temperature at night",
+          "target_normal": "Target temperature for new rooms",
+          "target_night": "Target temperature at night for new rooms",
           "target_holiday": "Target temperature on holiday",
           "target_window_open": "Target temperature with a window open",
           "target_cool": "Cooling target",
@@ -112,7 +112,6 @@
           "aux_supply_margin": "Supply air counts as heating above the room by",
           "cool_release_above": "Release cooling above",
           "fan_normal": "Fan level",
-          "fan_night": "Fan level at night",
           "fan_holiday": "Fan level on holiday",
           "fan_quiet_max": "Fan level ceiling when quiet",
           "fan_boost": "Fan level when boosting",
@@ -146,8 +145,6 @@
             "humidity_sensor": "Humidity sensor",
             "co2_sensor": "CO₂ sensor",
             "aux_heat_off_at_night": "No auxiliary heat at night",
-            "target_normal": "Target temperature",
-            "target_night": "Target temperature at night",
             "target_holiday": "Target temperature on holiday",
             "target_window_open": "Target temperature with a window open",
             "target_cool": "Cooling target",
@@ -182,8 +179,6 @@
             "humidity_sensor": "Humidity sensor",
             "co2_sensor": "CO₂ sensor",
             "aux_heat_off_at_night": "No auxiliary heat at night",
-            "target_normal": "Target temperature",
-            "target_night": "Target temperature at night",
             "target_holiday": "Target temperature on holiday",
             "target_window_open": "Target temperature with a window open",
             "target_cool": "Cooling target",
@@ -233,6 +228,9 @@
       "holiday": {
         "name": "Holiday"
       },
+      "night_setback": {
+        "name": "Night setback"
+      },
       "dry_run": {
         "name": "Dry run"
       }
@@ -258,6 +256,9 @@
           "3": "3",
           "4": "4"
         }
+      },
+      "fan_night": {
+        "name": "Fan level at night"
       }
     },
     "sensor": {
@@ -282,6 +283,14 @@
     "binary_sensor": {
       "missing_inputs": {
         "name": "Inputs missing"
+      }
+    },
+    "number": {
+      "target_normal": {
+        "name": "Target temperature"
+      },
+      "target_night": {
+        "name": "Target temperature at night"
       }
     }
   },

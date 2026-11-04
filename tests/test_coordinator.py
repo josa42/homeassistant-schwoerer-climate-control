@@ -230,8 +230,12 @@ async def test_the_entities_appear(hass: HomeAssistant, entry, unit, setup_entry
         "switch.schworer_climate_control_active",
         "switch.schworer_climate_control_holiday",
         "switch.schworer_climate_control_dry_run",
+        "switch.schworer_climate_control_night_setback",
         "select.schworer_climate_control_mode",
         "select.schworer_climate_control_fan",
+        "select.schworer_climate_control_fan_level_at_night",
+        "number.wohnzimmer_target_temperature",
+        "number.wohnzimmer_target_temperature_at_night",
         "sensor.schworer_climate_control_decision",
         "binary_sensor.schworer_climate_control_inputs_missing",
         "sensor.wohnzimmer_decision",
@@ -561,3 +565,32 @@ async def test_the_head_start_is_not_offered_for_long(
     progress = await start_with_history(19.0, current=19.0)
     assert progress.stalled is False
     assert progress.since > dt_util.utcnow() - timedelta(minutes=1)
+
+
+async def test_the_setpoint_entities_start_from_the_configuration(
+    hass: HomeAssistant, entry, unit, setup_entry
+) -> None:
+    unit()
+    await setup_entry(entry)
+    assert hass.states.get("number.wohnzimmer_target_temperature").state == "20.0"
+    assert hass.states.get("number.wohnzimmer_target_temperature_at_night").state == "19.0"
+    assert hass.states.get("select.schworer_climate_control_fan_level_at_night").state == "1"
+
+
+async def test_a_setpoint_entity_drives_the_room(
+    hass: HomeAssistant, start
+) -> None:
+    coordinator, calls = await start()
+    await coordinator.async_set_mode(Mode.HEATING)
+    await hass.async_block_till_done()
+
+    await hass.services.async_call(
+        "number",
+        "set_value",
+        {"entity_id": "number.wohnzimmer_target_temperature", "value": 21.5},
+        blocking=True,
+    )
+    await hass.async_block_till_done()
+
+    assert coordinator.data.rooms[0].target_temperature == 21.5
+    assert coordinator.data.rooms[0].settings["target_normal"]["source"] == "room"

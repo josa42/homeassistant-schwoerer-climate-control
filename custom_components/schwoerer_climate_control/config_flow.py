@@ -52,7 +52,6 @@ from .const import (
     CONF_FAN_HEAT_CAP,
     CONF_FAN_HEAT_PUMP,
     CONF_FAN_HOLIDAY,
-    CONF_FAN_NIGHT,
     CONF_FAN_NIGHT_COOLING,
     CONF_FAN_NORMAL,
     CONF_FAN_OFF_ABOVE,
@@ -248,7 +247,6 @@ def thresholds_schema(values: Mapping[str, Any]) -> vol.Schema:
         CONF_AUX_SUPPLY_MARGIN: _kelvin(0, 20),
         CONF_COOL_RELEASE_ABOVE: _temperature(),
         CONF_FAN_NORMAL: _stage(),
-        CONF_FAN_NIGHT: _stage(),
         CONF_FAN_HOLIDAY: _stage(),
         CONF_FAN_QUIET_MAX: _stage(),
         CONF_FAN_BOOST: _stage(),
@@ -318,9 +316,8 @@ def room_schema(values: Mapping[str, Any]) -> vol.Schema:
     )
 
     # The overrides. Empty means the hub's value, which is what lets a decision
-    # name the level a number came from.
-    _optional(schema, CONF_TARGET_NORMAL, values, _temperature())
-    _optional(schema, CONF_TARGET_NIGHT, values, _temperature())
+    # name the level a number came from. The setpoints by day and at night are
+    # the room's number entities instead.
     _optional(schema, CONF_TARGET_HOLIDAY, values, _temperature())
     _optional(schema, CONF_TARGET_WINDOW_OPEN, values, _temperature())
     _optional(schema, CONF_TARGET_COOL, values, _temperature())

@@ -97,6 +97,7 @@ def run(
     mode: Mode = Mode.HEATING,
     fan_request: Any = FanMode.AUTOMATIC,
     holiday: bool = False,
+    night_setback: bool = True,
 ):
     return evaluate(
         inputs or given(),
@@ -106,6 +107,7 @@ def run(
         mode=mode,
         fan_request=fan_request,
         holiday=holiday,
+        night_setback=night_setback,
     )
 
 
@@ -243,6 +245,15 @@ def test_night_setback() -> None:
     assert decision.rooms[0].target_temperature == 19.0
     assert decision.rooms[0].reason is RoomReason.NIGHT_SETBACK
     assert decision.is_night is True
+
+
+def test_without_the_night_setback_a_room_keeps_its_day_setpoint() -> None:
+    decision, _ = run(given(now=NIGHT), night_setback=False)
+    room = decision.rooms[0]
+    assert room.target_temperature == 20.0
+    assert room.reason is RoomReason.NORMAL
+    assert room.gate_passed("night") is True, "it is still night"
+    assert decision.fan_level == 1, "the fan keeps its night stage"
 
 
 def test_holiday_beats_the_night_setback() -> None:

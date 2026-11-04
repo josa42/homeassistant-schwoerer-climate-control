@@ -2,6 +2,18 @@
 
 ## 1.5.0 - 2026-11-04
 
+### Added
+
+- **The setpoints and the night setback are entities.** Each room has a *Target
+  temperature* and a *Target temperature at night*, and the hub a *Night
+  setback* switch and a *Fan level at night* select. An automation can set them
+  and the history shows when they changed. Each starts from what the
+  configuration resolved to and holds its own value from then on, so the
+  fields are gone from the room form and the fan field from the hub's. The
+  hub's setpoints are what a new room starts from. With the night setback off
+  the rooms keep their day setpoint at night, while the fan still runs its
+  night stage.
+
 ### Fixed
 
 - **A contact that cannot be read counts as closed.** It used to count as an

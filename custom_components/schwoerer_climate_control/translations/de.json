@@ -93,8 +93,8 @@
       "thresholds": {
         "title": "Temperaturen, Schwellwerte und Luftstufen",
         "data": {
-          "target_normal": "Solltemperatur",
-          "target_night": "Solltemperatur nachts",
+          "target_normal": "Solltemperatur für neue Räume",
+          "target_night": "Solltemperatur nachts für neue Räume",
           "target_holiday": "Solltemperatur im Urlaub",
           "target_window_open": "Solltemperatur bei offenem Fenster",
           "target_cool": "Kühl-Solltemperatur",
@@ -112,7 +112,6 @@
           "aux_supply_margin": "Zuluft heizt ab so viel über dem Raum",
           "cool_release_above": "Kühlen freigeben über",
           "fan_normal": "Luftstufe",
-          "fan_night": "Luftstufe nachts",
           "fan_holiday": "Luftstufe im Urlaub",
           "fan_quiet_max": "Obergrenze der Luftstufe bei leise",
           "fan_boost": "Luftstufe bei Boost",
@@ -146,8 +145,6 @@
             "humidity_sensor": "Feuchtesensor",
             "co2_sensor": "CO₂-Sensor",
             "aux_heat_off_at_night": "Nachts kein Zusatzheizer",
-            "target_normal": "Solltemperatur",
-            "target_night": "Solltemperatur nachts",
             "target_holiday": "Solltemperatur im Urlaub",
             "target_window_open": "Solltemperatur bei offenem Fenster",
             "target_cool": "Kühl-Solltemperatur",
@@ -182,8 +179,6 @@
             "humidity_sensor": "Feuchtesensor",
             "co2_sensor": "CO₂-Sensor",
             "aux_heat_off_at_night": "Nachts kein Zusatzheizer",
-            "target_normal": "Solltemperatur",
-            "target_night": "Solltemperatur nachts",
             "target_holiday": "Solltemperatur im Urlaub",
             "target_window_open": "Solltemperatur bei offenem Fenster",
             "target_cool": "Kühl-Solltemperatur",
@@ -233,6 +228,9 @@
       "holiday": {
         "name": "Urlaub"
       },
+      "night_setback": {
+        "name": "Nachtabsenkung"
+      },
       "dry_run": {
         "name": "Testbetrieb"
       }
@@ -258,6 +256,9 @@
           "3": "3",
           "4": "4"
         }
+      },
+      "fan_night": {
+        "name": "Luftstufe nachts"
       }
     },
     "sensor": {
@@ -282,6 +283,14 @@
     "binary_sensor": {
       "missing_inputs": {
         "name": "Eingaben fehlen"
+      }
+    },
+    "number": {
+      "target_normal": {
+        "name": "Solltemperatur"
+      },
+      "target_night": {
+        "name": "Solltemperatur nachts"
       }
     }
   },

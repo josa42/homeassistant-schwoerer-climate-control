@@ -16,6 +16,7 @@ from custom_components.schwoerer_climate_control.const import (
     CONF_FAN_SELECT,
     CONF_NAME,
     CONF_OUTDOOR_SENSOR,
+    CONF_TARGET_HOLIDAY,
     CONF_TARGET_NORMAL,
     CONF_TEMPERATURE_SENSOR,
     DOMAIN,
@@ -82,13 +83,13 @@ async def test_adding_a_room(hass: HomeAssistant, entry, unit, setup_entry) -> N
             CONF_NAME: "Badezimmer",
             "actuator": "generic",
             CONF_CLIMATE_ENTITY: "climate.badezimmer",
-            CONF_TARGET_NORMAL: 22.0,
+            CONF_TARGET_HOLIDAY: 17.0,
             "aux_heat_off_at_night": False,
         },
     )
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["title"] == "Badezimmer"
-    assert result["data"][CONF_TARGET_NORMAL] == 22.0
+    assert result["data"][CONF_TARGET_HOLIDAY] == 17.0
     assert CONF_TEMPERATURE_SENSOR not in result["data"]
 
 
@@ -383,10 +384,10 @@ async def test_a_room_may_keep_its_own_thermostat_when_reconfigured(
             CONF_NAME: "Wohnzimmer",
             "actuator": "wgt_room",
             CONF_CLIMATE_ENTITY: "climate.wohnzimmer",
-            CONF_TARGET_NORMAL: 21.5,
+            CONF_TARGET_HOLIDAY: 17.5,
             "aux_heat_off_at_night": False,
         },
     )
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "reconfigure_successful"
-    assert entry.subentries[subentry_id].data[CONF_TARGET_NORMAL] == 21.5
+    assert entry.subentries[subentry_id].data[CONF_TARGET_HOLIDAY] == 17.5

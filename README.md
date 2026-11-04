@@ -46,9 +46,15 @@ what the fan level should be. Rooms the WGT does not heat can join in through an
    page. Contacts, humidity and CO₂ sensors belong to other integrations and are
    added per room, through **Change this room**.
 
-Shared settings live on the hub and every room inherits them. Any of them can be
+Shared settings live on the hub and every room inherits them. Most of them can be
 overridden per room, and each decision records both the value it used and which
 level it came from.
+
+The values you change in daily life are entities instead, so an automation can
+set them and the history shows when they changed: each room's setpoint by day and
+at night, the fan stage at night, and whether the night setback applies at all.
+They start from what the configuration said and hold their own value from then
+on. The hub's setpoints are what a new room starts from.
 
 A room is a name, a thermostat, and whatever measures it. For a room of the unit
 the thermostat is its own `climate` entity, whose hvac mode is the auxiliary
@@ -135,7 +141,7 @@ hub, under **Configure** → **Temperatures, thresholds and fan levels**.
 | Humidity | Each room's humidity sensor | Above 70 %, the base is 3, at once | `humidity_high` (per room), `fan_air_quality` |
 | Night cooling | Mode, time, outdoor and the warmest room | While cooling at night with it cooler outside, the base is 3 | `fan_night_cooling` |
 | Holiday | The holiday switch | The base is 1 | `fan_holiday` |
-| Night | The time, 20:00 to 05:00 | The base is 1 | `fan_night`, `night_start`, `night_end` |
+| Night | The time, 20:00 to 05:00 | The base is 1 | *Fan level at night*, `night_start`, `night_end` |
 | Normal | | The base is 2 | `fan_normal` |
 | Heat pump | Mode, time and the heat pump status | While heating by day with the compressor running, at least 3 | `fan_heat_pump` |
 | Boost | The fan select | At least 3 | `fan_boost` |
@@ -256,8 +262,12 @@ reaches the unit.
 
 | Device | Entities |
 | --- | --- |
-| Central | Active, holiday and dry run switches, mode and fan selects, decision sensor, inputs-missing indicator, heat recovery sensor |
-| Each room | Decision sensor |
+| Central | Active, holiday, night setback and dry run switches, mode, fan and fan-level-at-night selects, decision sensor, inputs-missing indicator, heat recovery sensor |
+| Each room | Target temperature and target temperature at night, decision sensor |
+
+**Night setback** off keeps every room at its day setpoint at night. The night
+still counts for the rest, so the fan runs its night stage either way, which
+*Fan level at night* sets.
 
 **Active** off means no register is written at all. The unit keeps running on its
 last values and the decision sensors keep showing what the controller would do,
