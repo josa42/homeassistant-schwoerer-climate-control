@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **The decisions say how close they are to changing.** Each decision sensor
+  now lists the readings it watches with the limit that would turn it over and
+  how far off that is (`thresholds`), what it already knows will happen and
+  when (`upcoming`), and the entities behind its inputs (`sources`). None of it
+  is recorded.
+- **Power of the unit**, an optional entity under *Entities*. No decision reads
+  it; the dashboard shows the energy from it.
+
 ## 1.5.0 - 2026-11-04
 
 ### Added

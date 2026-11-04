@@ -21,9 +21,25 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .const import (
+    CONF_AUX_HOUSE_SWITCH,
+    CONF_BYPASS_SENSOR,
+    CONF_CO2_SENSOR,
+    CONF_COMPRESSOR_SENSOR,
+    CONF_CONTACTS,
+    CONF_COOL_RELEASE_SWITCH,
     CONF_EXTRACT_TEMPERATURE_SENSOR,
+    CONF_FAN_SELECT,
+    CONF_FORECAST_ENTITY,
+    CONF_FUNCTION_SELECT,
+    CONF_HEAT_RELEASE_SWITCH,
+    CONF_HUMIDITY_SENSOR,
+    CONF_OPERATION_MODE_SELECT,
     CONF_OUTDOOR_SENSOR,
+    CONF_POWER_SENSOR,
+    CONF_SUPPLY_AIR_SENSOR,
     CONF_SUPPLY_TEMPERATURE_SENSOR,
+    CONF_SURPLUS_ENTITY,
+    CONF_TEMPERATURE_SENSOR,
     SUBENTRY_TYPE_ROOM,
     Intent,
     RoomIntent,
@@ -72,6 +88,27 @@ async def async_setup_entry(
         )
 
 
+#: The unit's inputs a dashboard may want to read for itself, by the name it
+#: knows them under.
+HUB_SOURCES: dict[str, str] = {
+    "outdoor": CONF_OUTDOOR_SENSOR,
+    "supply_air": CONF_SUPPLY_AIR_SENSOR,
+    "supply_temperature": CONF_SUPPLY_TEMPERATURE_SENSOR,
+    "extract": CONF_EXTRACT_TEMPERATURE_SENSOR,
+    "compressor": CONF_COMPRESSOR_SENSOR,
+    "fan": CONF_FAN_SELECT,
+    "heat_release": CONF_HEAT_RELEASE_SWITCH,
+    "cool_release": CONF_COOL_RELEASE_SWITCH,
+    "function": CONF_FUNCTION_SELECT,
+    "aux_house": CONF_AUX_HOUSE_SWITCH,
+    "operation_mode": CONF_OPERATION_MODE_SELECT,
+    "bypass": CONF_BYPASS_SENSOR,
+    "forecast": CONF_FORECAST_ENTITY,
+    "surplus": CONF_SURPLUS_ENTITY,
+    "power": CONF_POWER_SENSOR,
+}
+
+
 class SystemDecisionSensor(HubEntity, SensorEntity):
     """What the controller decided for the unit, and why."""
 
@@ -92,11 +129,17 @@ class SystemDecisionSensor(HubEntity, SensorEntity):
         decision = self.coordinator.data
         if decision is None:
             return {}
+        config = self.coordinator.hub_config
         return {
             **decision.as_attributes(),
             "gates": [gate.as_dict() for gate in decision.gates],
+            "thresholds": [threshold.as_dict() for threshold in decision.thresholds],
+            "upcoming": [event.as_dict() for event in decision.upcoming],
             "inputs": decision.inputs,
             "settings": decision.settings,
+            "sources": {
+                name: config[key] for name, key in HUB_SOURCES.items() if config.get(key)
+            },
         }
 
 
@@ -131,12 +174,29 @@ class RoomDecisionSensor(RoomEntity, SensorEntity):
         decision = self._decision
         if decision is None:
             return {}
+        room = self.room
         return {
             **decision.as_attributes(),
             "gates": [gate.as_dict() for gate in decision.gates],
+            "thresholds": [threshold.as_dict() for threshold in decision.thresholds],
+            "upcoming": [event.as_dict() for event in decision.upcoming],
             "inputs": decision.inputs,
             "settings": decision.settings,
+            "sources": {} if room is None else _room_sources(room),
         }
+
+
+def _room_sources(room: RoomRuntime) -> dict[str, Any]:
+    """A room's own inputs, by the name a dashboard knows them under."""
+    config = room.config
+    sources: dict[str, Any] = {
+        "climate": room.climate_entity,
+        "temperature": config.get(CONF_TEMPERATURE_SENSOR) or room.climate_entity,
+        "humidity": config.get(CONF_HUMIDITY_SENSOR),
+        "co2": config.get(CONF_CO2_SENSOR),
+        "contacts": list(config.get(CONF_CONTACTS) or []),
+    }
+    return {name: value for name, value in sources.items() if value}
 
 
 class HeatRecoverySensor(HubEntity, SensorEntity):

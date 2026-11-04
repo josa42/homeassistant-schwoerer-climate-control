@@ -22,7 +22,8 @@
           "extract_temperature_sensor": "Ablufttemperatur (T5)",
           "bypass_sensor": "Bypass-Zustand",
           "add_rooms": "Räume der Anlage übernehmen",
-          "surplus_entity": "Energie übrig"
+          "surplus_entity": "Energie übrig",
+          "power_sensor": "Leistung der Anlage"
         },
         "data_description": {
           "operation_mode_select": "Wird nur gelesen, nie geschrieben. Die Entscheidungen setzen Handbetrieb voraus, sonst erscheint eine Reparatur.",
@@ -37,7 +38,8 @@
           "extract_temperature_sensor": "Optional. Die Luft, die das Haus verlässt, also das, was zurückzugewinnen ist.",
           "bypass_sensor": "Optional, und wird nur gelesen. Für die Klappe gibt es auf keiner bekannten Firmware ein Schreibregister.",
           "add_rooms": "Legt pro Thermostat der Anlage einen Raum an, mit dem Namen den er schon hat. Kontakte, Feuchte und CO₂ gehören zu anderen Integrationen und kommen danach pro Raum dazu.",
-          "surplus_entity": "Optional. Eine An/Aus-Entity wird beim Wort genommen, eine Zahl gegen die beiden Schwellen gelesen. Kühlen mit dem Kompressor läuft nur solange das ja sagt, und Sollwerte werden nur dann angehoben. Mit Batterie und Tarif ist „übrig“ eine Richtlinie, deshalb ist ein eigener Template-Sensor die ehrliche Antwort."
+          "surplus_entity": "Optional. Eine An/Aus-Entity wird beim Wort genommen, eine Zahl gegen die beiden Schwellen gelesen. Kühlen mit dem Kompressor läuft nur solange das ja sagt, und Sollwerte werden nur dann angehoben. Mit Batterie und Tarif ist „übrig“ eine Richtlinie, deshalb ist ein eigener Template-Sensor die ehrliche Antwort.",
+          "power_sensor": "Optional. Was die Anlage zieht, in Watt, von einem eigenen Zähler. Nur das Dashboard liest es, für die Energie, die es zeigt."
         }
       }
     },
@@ -73,7 +75,8 @@
           "supply_temperature_sensor": "Zulufttemperatur (T3)",
           "extract_temperature_sensor": "Ablufttemperatur (T5)",
           "bypass_sensor": "Bypass-Zustand",
-          "surplus_entity": "Energie übrig"
+          "surplus_entity": "Energie übrig",
+          "power_sensor": "Leistung der Anlage"
         },
         "data_description": {
           "operation_mode_select": "Wird nur gelesen, nie geschrieben. Die Entscheidungen setzen Handbetrieb voraus, sonst erscheint eine Reparatur.",
@@ -87,7 +90,8 @@
           "supply_temperature_sensor": "Optional. Zusammen mit Abluft und Außentemperatur sagt das, ob der Bypass überhaupt Luft bewegt.",
           "extract_temperature_sensor": "Optional. Die Luft, die das Haus verlässt, also das, was zurückzugewinnen ist.",
           "bypass_sensor": "Optional, und wird nur gelesen. Für die Klappe gibt es auf keiner bekannten Firmware ein Schreibregister.",
-          "surplus_entity": "Optional. Eine An/Aus-Entity wird beim Wort genommen, eine Zahl gegen die beiden Schwellen gelesen. Kühlen mit dem Kompressor läuft nur solange das ja sagt, und Sollwerte werden nur dann angehoben. Mit Batterie und Tarif ist „übrig“ eine Richtlinie, deshalb ist ein eigener Template-Sensor die ehrliche Antwort."
+          "surplus_entity": "Optional. Eine An/Aus-Entity wird beim Wort genommen, eine Zahl gegen die beiden Schwellen gelesen. Kühlen mit dem Kompressor läuft nur solange das ja sagt, und Sollwerte werden nur dann angehoben. Mit Batterie und Tarif ist „übrig“ eine Richtlinie, deshalb ist ein eigener Template-Sensor die ehrliche Antwort.",
+          "power_sensor": "Optional. Was die Anlage zieht, in Watt, von einem eigenen Zähler. Nur das Dashboard liest es, für die Energie, die es zeigt."
         }
       },
       "thresholds": {

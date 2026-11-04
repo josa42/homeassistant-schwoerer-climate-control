@@ -73,6 +73,7 @@ from .const import (
     CONF_NOTIFY_SERVICE,
     CONF_OPERATION_MODE_SELECT,
     CONF_OUTDOOR_SENSOR,
+    CONF_POWER_SENSOR,
     CONF_RELEASE_HYSTERESIS,
     CONF_SUPPLY_AIR_SENSOR,
     CONF_SUPPLY_TEMPERATURE_SENSOR,
@@ -175,6 +176,7 @@ def unit_schema(values: Mapping[str, Any]) -> vol.Schema:
         values,
         _entity(["binary_sensor", "input_boolean", "sensor"]),
     )
+    _optional(schema, CONF_POWER_SENSOR, values, _entity("sensor", device_class="power"))
     _optional(schema, CONF_NOTIFY_SERVICE, values, _entity("notify"))
     schema[
         vol.Required(
@@ -361,6 +363,7 @@ UNIT_KEYS: tuple[str, ...] = (
     CONF_BYPASS_SENSOR,
     CONF_FORECAST_ENTITY,
     CONF_SURPLUS_ENTITY,
+    CONF_POWER_SENSOR,
     CONF_NOTIFY_EVERY_CHANGE,
     CONF_NOTIFY_SERVICE,
     CONF_NOTIFY_EVERY_CHANGE,

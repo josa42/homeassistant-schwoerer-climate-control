@@ -27,7 +27,9 @@ from .const import (
 #: Attributes a decision sensor publishes but the recorder must not write. Each
 #: one changes shape on every evaluation, and six rooms writing them four times
 #: an hour is a database full of the same trace.
-UNRECORDED_ATTRIBUTES = frozenset({"gates", "inputs", "settings"})
+UNRECORDED_ATTRIBUTES = frozenset(
+    {"gates", "inputs", "settings", "thresholds", "upcoming", "sources"}
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -134,6 +136,52 @@ class Gate:
 
 
 @dataclass(frozen=True, slots=True)
+class Threshold:
+    """A reading the decision watches, and where it would turn the decision over.
+
+    ``when`` says on which side of ``limit`` the change lies: ``"above"`` turns
+    it over once ``value`` rises past the limit, ``"below"`` once it falls under
+    it. ``key`` names what would happen then. The engine owns the rules, so it
+    is the one to say how close the next change is; a dashboard only shows it.
+    """
+
+    key: str
+    value: float | None
+    limit: float
+    unit: str
+    when: str  # "above" | "below"
+
+    @property
+    def distance(self) -> float | None:
+        """How far the value still has to go, negative once it is past."""
+        if self.value is None:
+            return None
+        gap = self.limit - self.value if self.when == "above" else self.value - self.limit
+        return round(gap, 2)
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "key": self.key,
+            "value": self.value,
+            "limit": round(self.limit, 2),
+            "unit": self.unit,
+            "when": self.when,
+            "distance": self.distance,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class Upcoming:
+    """Something the decision already knows will happen, and when."""
+
+    key: str
+    at: datetime
+
+    def as_dict(self) -> dict[str, Any]:
+        return {"key": self.key, "at": self.at.isoformat()}
+
+
+@dataclass(frozen=True, slots=True)
 class RoomDecision:
     """One complete evaluation of one room."""
 
@@ -157,6 +205,8 @@ class RoomDecision:
     #: dwell. Recorded, so the dwell can carry on where it stood after a restart.
     auxiliary_heat_waiting_since: datetime | None = None
     gates: tuple[Gate, ...] = ()
+    thresholds: tuple[Threshold, ...] = ()
+    upcoming: tuple[Upcoming, ...] = ()
     inputs: dict[str, Any] = field(default_factory=dict)
     settings: dict[str, dict[str, Any]] = field(default_factory=dict)
     #: Inputs that were configured but could not be read.
@@ -219,6 +269,8 @@ class RoomDecision:
             "heating_enabled": self.heating_enabled,
             "window_open": self.window_open,
             "gates": [gate.as_dict() for gate in self.gates],
+            "thresholds": [threshold.as_dict() for threshold in self.thresholds],
+            "upcoming": [event.as_dict() for event in self.upcoming],
             "inputs": self.inputs,
             "settings": self.settings,
             "failed_inputs": list(self.degraded),
@@ -256,6 +308,8 @@ class SystemDecision:
     is_night: bool = False
     rooms: tuple[RoomDecision, ...] = ()
     gates: tuple[Gate, ...] = ()
+    thresholds: tuple[Threshold, ...] = ()
+    upcoming: tuple[Upcoming, ...] = ()
     inputs: dict[str, Any] = field(default_factory=dict)
     settings: dict[str, dict[str, Any]] = field(default_factory=dict)
     degraded: tuple[str, ...] = ()
@@ -326,6 +380,8 @@ class SystemDecision:
             "fan_capped_from": self.fan_capped_from,
             "is_night": self.is_night,
             "gates": [gate.as_dict() for gate in self.gates],
+            "thresholds": [threshold.as_dict() for threshold in self.thresholds],
+            "upcoming": [event.as_dict() for event in self.upcoming],
             "inputs": self.inputs,
             "settings": self.settings,
             "failed_inputs": list(self.degraded),

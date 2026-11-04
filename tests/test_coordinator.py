@@ -25,11 +25,13 @@ from custom_components.schwoerer_climate_control.const import (
 from custom_components.schwoerer_climate_control.engine import EngineState
 
 from .conftest import (
+    COMPRESSOR,
     CONTACT,
     FAN,
     HEAT,
     HUB_DATA,
     OPERATION_MODE,
+    OUTDOOR,
     ROOM_DATA,
     THERMOSTAT,
     record_writes,
@@ -254,6 +256,27 @@ async def test_the_decision_sensor_carries_the_reasoning(
     assert state.attributes["gates"]
     assert state.attributes["inputs"]["outdoor"]["value"] == 5.0
     assert state.attributes["settings"]["heat_release_below"]["source"] == "default"
+
+
+async def test_the_decision_sensors_say_where_their_inputs_come_from(
+    hass: HomeAssistant, entry, unit, setup_entry
+) -> None:
+    # What a dashboard reads for itself: the unit's entities and the room's own.
+    unit()
+    await setup_entry(entry)
+    hub = hass.states.get("sensor.schworer_climate_control_decision").attributes
+    assert hub["sources"]["outdoor"] == OUTDOOR
+    assert hub["sources"]["compressor"] == COMPRESSOR
+    assert "power" not in hub["sources"], "only what is configured"
+    assert any(t["key"] == "aux_outdoor" or t["key"].startswith("fan_") for t in hub["thresholds"])
+    assert {event["key"] for event in hub["upcoming"]} & {"night_starts", "night_ends"}
+
+    room = hass.states.get("sensor.wohnzimmer_decision").attributes
+    assert room["sources"] == {
+        "climate": THERMOSTAT,
+        "temperature": THERMOSTAT,
+        "contacts": [CONTACT],
+    }
 
 
 async def test_the_room_sensor_says_what_its_setpoint_is_for(

@@ -279,6 +279,9 @@ CONF_SURPLUS_START = "surplus_start"
 #: Lower than the start, so that spending the surplus does not immediately
 #: withdraw the reason for spending it.
 CONF_SURPLUS_STOP = "surplus_stop"
+#: What the unit draws, from a meter of the user's own. Only the dashboard reads
+#: it; no decision depends on it.
+CONF_POWER_SENSOR = "power_sensor"
 
 # A room.
 CONF_ACTUATOR = "actuator"

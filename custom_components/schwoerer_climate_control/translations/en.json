@@ -22,7 +22,8 @@
           "extract_temperature_sensor": "Extract air temperature (T5)",
           "bypass_sensor": "Bypass state",
           "add_rooms": "Take on the unit's rooms",
-          "surplus_entity": "Energy to spare"
+          "surplus_entity": "Energy to spare",
+          "power_sensor": "Power of the unit"
         },
         "data_description": {
           "operation_mode_select": "Only read, never written. The decisions assume the unit is in manual mode, and a repair is raised when it is not.",
@@ -37,7 +38,8 @@
           "extract_temperature_sensor": "Optional. The air leaving the house, which is what there is to recover from.",
           "bypass_sensor": "Optional, and read only. There is no write register for the damper on any known firmware.",
           "add_rooms": "Creates one room per thermostat of the unit, with the name it already has. Contacts, humidity and CO₂ belong to other integrations and are added per room afterwards.",
-          "surplus_entity": "Optional. An on/off entity is taken at its word; a number is read against the two thresholds. Cooling with the compressor only runs while this says yes, and setpoints are only raised then. With a battery and a tariff, what counts as spare is a policy, so a template sensor of your own is the honest answer."
+          "surplus_entity": "Optional. An on/off entity is taken at its word; a number is read against the two thresholds. Cooling with the compressor only runs while this says yes, and setpoints are only raised then. With a battery and a tariff, what counts as spare is a policy, so a template sensor of your own is the honest answer.",
+          "power_sensor": "Optional. What the unit draws, in watts, from a meter of your own. Only the dashboard reads it, for the energy it shows."
         }
       }
     },
@@ -73,7 +75,8 @@
           "supply_temperature_sensor": "Supply air temperature (T3)",
           "extract_temperature_sensor": "Extract air temperature (T5)",
           "bypass_sensor": "Bypass state",
-          "surplus_entity": "Energy to spare"
+          "surplus_entity": "Energy to spare",
+          "power_sensor": "Power of the unit"
         },
         "data_description": {
           "operation_mode_select": "Only read, never written. The decisions assume the unit is in manual mode, and a repair is raised when it is not.",
@@ -87,7 +90,8 @@
           "supply_temperature_sensor": "Optional. With the extract air and the outdoor reading, this is what says whether the bypass is moving any air at all.",
           "extract_temperature_sensor": "Optional. The air leaving the house, which is what there is to recover from.",
           "bypass_sensor": "Optional, and read only. There is no write register for the damper on any known firmware.",
-          "surplus_entity": "Optional. An on/off entity is taken at its word; a number is read against the two thresholds. Cooling with the compressor only runs while this says yes, and setpoints are only raised then. With a battery and a tariff, what counts as spare is a policy, so a template sensor of your own is the honest answer."
+          "surplus_entity": "Optional. An on/off entity is taken at its word; a number is read against the two thresholds. Cooling with the compressor only runs while this says yes, and setpoints are only raised then. With a battery and a tariff, what counts as spare is a policy, so a template sensor of your own is the honest answer.",
+          "power_sensor": "Optional. What the unit draws, in watts, from a meter of your own. Only the dashboard reads it, for the energy it shows."
         }
       },
       "thresholds": {

@@ -280,8 +280,14 @@ which makes it the switch to reach for while working out why it did something.
 
 The decision sensor carries the intent as its state, plus the sentence, the inputs
 with their age, the conditions with their outcome and every setting with the level
-it came from. Those last three are kept out of the recorder, because they change
-shape on every evaluation.
+it came from. It also says how close the decision is to changing: `thresholds`
+lists each reading it watches with the limit that would turn it over and how far
+off that is (the heat pump release against the outdoor temperature, a room
+against the deficit that starts its heater), and `upcoming` what it already
+knows will happen and when (the night, the verdict on a room left to the heat
+pump, a heater's wait running out). `sources` names the entities behind the
+inputs. These are kept out of the recorder, because they change shape on every
+evaluation.
 
 <br><br>
 

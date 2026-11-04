@@ -1029,3 +1029,81 @@ def test_a_heater_that_runs_is_not_waiting() -> None:
     decision, _ = run(inputs, state=EngineState(aux_needed_since={"wohnzimmer": since}))
     assert decision.rooms[0].auxiliary_heat is True
     assert decision.rooms[0].auxiliary_heat_waiting_since is None
+
+
+################################################################################
+# How close the next change is
+
+
+def thresholds(decision) -> dict[str, dict]:
+    return {t.key: t.as_dict() for t in decision.thresholds}
+
+
+def upcoming(decision) -> dict[str, datetime]:
+    return {event.key: event.at for event in decision.upcoming}
+
+
+def test_a_released_heat_pump_is_watched_for_what_turns_it_off() -> None:
+    decision, _ = run(given(heat_release=read(True)))
+    off = thresholds(decision)["heat_release_off"]
+    # 16 °C plus the kelvin of hysteresis, from 5 °C.
+    assert (off["value"], off["limit"], off["when"], off["distance"]) == (5.0, 17.0, "above", 12.0)
+    assert "heat_release_on" not in thresholds(decision)
+
+
+def test_a_withheld_heat_pump_is_watched_for_what_turns_it_on() -> None:
+    decision, _ = run(given(outdoor=read(18.0)))
+    on = thresholds(decision)["heat_release_on"]
+    assert (on["limit"], on["when"], on["distance"]) == (16.0, "below", 2.0)
+
+
+def test_a_change_held_by_the_lockout_says_when_it_ends() -> None:
+    inputs = given(
+        outdoor=read(20.0),
+        heat_release=read(True, stable=timedelta(minutes=10)),
+        compressor_running=read(True),
+    )
+    decision, _ = run(inputs)
+    assert upcoming(decision)["release_lockout_ends"] == NOON + timedelta(minutes=20)
+
+
+def test_the_night_says_when_it_starts_and_ends() -> None:
+    assert upcoming(run(given())[0])["night_starts"] == NOON.replace(hour=20)
+    night = upcoming(run(given(now=NIGHT))[0])
+    assert night["night_ends"] == (NIGHT + timedelta(days=1)).replace(hour=5)
+
+
+def test_a_room_short_of_the_deficit_is_watched_for_it() -> None:
+    room = run(given(rooms=(a_cold_room(temperature=read(19.8)),)))[0].rooms[0]
+    wanted = thresholds(room)["aux_wanted"]
+    # 20 °C less the 0.5 K that starts the heater.
+    assert (wanted["limit"], wanted["when"], wanted["distance"]) == (19.5, "below", 0.3)
+    assert thresholds(room)["aux_override"]["limit"] == 18.0
+
+
+def test_a_room_left_to_the_heat_pump_shows_its_rise_and_the_verdict() -> None:
+    inputs = given(supply_air=read(41.0), rooms=(a_cold_room(temperature=read(19.1)),))
+    since = NOON - timedelta(minutes=10)
+    room = run(inputs, state=left_to_the_heat_pump(19.0, since=since))[0].rooms[0]
+    rise = thresholds(room)["aux_rise"]
+    assert (rise["value"], rise["limit"], rise["when"]) == (0.1, 0.2, "above")
+    assert upcoming(room)["aux_verdict"] == since + AUX_PROGRESS_WINDOW
+    assert thresholds(room)["aux_supply"]["value"] == 21.9
+    assert "aux_wanted" not in thresholds(room), "short enough already"
+
+
+def test_a_waiting_heater_says_when_it_goes_on() -> None:
+    since = NOON - timedelta(minutes=5)
+    inputs = given(rooms=(a_cold_room(temperature=read(17.5)),))
+    room = run(inputs, state=EngineState(aux_needed_since={"wohnzimmer": since}))[0].rooms[0]
+    assert upcoming(room)["aux_on"] == since + AUX_DWELL
+
+
+def test_a_running_heater_is_watched_for_its_setpoint() -> None:
+    inputs = given(
+        rooms=(a_cold_room(temperature=read(19.0), auxiliary_enabled=read(True)),)
+    )
+    room = run(inputs)[0].rooms[0]
+    assert room.auxiliary_heat is True
+    assert thresholds(room)["aux_reached"]["limit"] == 20.0
+    assert "aux_wanted" not in thresholds(room)

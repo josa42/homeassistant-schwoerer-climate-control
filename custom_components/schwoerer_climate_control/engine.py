@@ -79,7 +79,15 @@ from .const import (
     RoomIntent,
     RoomReason,
 )
-from .models import EffectiveConfig, Gate, Reading, RoomDecision, SystemDecision
+from .models import (
+    EffectiveConfig,
+    Gate,
+    Reading,
+    RoomDecision,
+    SystemDecision,
+    Threshold,
+    Upcoming,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -799,6 +807,22 @@ def _room_decision(
         heating_enabled = mode is Mode.HEATING and not window_open
         gates.append(Gate("heating_allowed", heating_enabled, f"mode is {mode}"))
 
+    thresholds, upcoming = _room_outlook(
+        config,
+        now=now,
+        night=night,
+        temperature=temperature,
+        target=target,
+        outdoor=outdoor,
+        supply=supply,
+        window_open=window_open,
+        wgt_room=room.actuator is ActuatorKind.WGT_ROOM,
+        heater_on=auxiliary is True,
+        wanted=wanted,
+        progress=progress,
+        waiting_since=aux_waiting_since,
+    )
+
     message = _room_message(
         reason=reason,
         intent=intent,
@@ -823,11 +847,105 @@ def _room_decision(
         window_open=window_open,
         auxiliary_heat_waiting_since=aux_waiting_since,
         gates=tuple(gates),
+        thresholds=thresholds,
+        upcoming=upcoming,
         inputs=raw,
         settings=settings,
         degraded=tuple(degraded),
     )
     return decision, wanted, progress
+
+
+def _next_night_change(config: EffectiveConfig, now: datetime, night: bool) -> Upcoming:
+    """When the night window next starts or ends."""
+    key = CONF_NIGHT_END if night else CONF_NIGHT_START
+    at = datetime.combine(now.date(), _parse_time(config.get(key)), tzinfo=now.tzinfo)
+    if at <= now:
+        at += timedelta(days=1)
+    return Upcoming("night_ends" if night else "night_starts", at)
+
+
+def _room_outlook(
+    config: EffectiveConfig,
+    *,
+    now: datetime,
+    night: bool,
+    temperature: float | None,
+    target: float,
+    outdoor: float | None,
+    supply: float | None,
+    window_open: bool,
+    wgt_room: bool,
+    heater_on: bool,
+    wanted: bool,
+    progress: AuxProgress | None,
+    waiting_since: datetime | None,
+) -> tuple[tuple[Threshold, ...], tuple[Upcoming, ...]]:
+    """What a room's decision watches, and what it already knows is coming.
+
+    Each threshold is the nearest edge of a rule as it stands now, so it follows
+    the same branches as the decision: a heater that runs is watched for its
+    setpoint, one that does not for the deficit that would start it.
+    """
+    thresholds: list[Threshold] = []
+    upcoming: list[Upcoming] = [_next_night_change(config, now, night)]
+
+    if temperature is not None and not window_open:
+        thresholds.append(
+            Threshold(
+                "frost_protection",
+                temperature,
+                config.number(CONF_FROST_PROTECTION_BELOW),
+                "°C",
+                "below",
+            )
+        )
+
+    if not wgt_room:
+        return tuple(thresholds), tuple(upcoming)
+
+    if outdoor is not None:
+        thresholds.append(
+            Threshold("aux_outdoor", outdoor, config.number(CONF_AUX_HEAT_BELOW), "°C", "above")
+        )
+    if temperature is None:
+        return tuple(thresholds), tuple(upcoming)
+
+    start = config.number(CONF_AUX_DEFICIT)
+    override = config.number(CONF_AUX_DEFICIT_OVERRIDE)
+    deficit = target - temperature
+    if heater_on:
+        thresholds.append(Threshold("aux_reached", temperature, target, "°C", "above"))
+    elif not wanted and deficit < start:
+        thresholds.append(Threshold("aux_wanted", temperature, target - start, "°C", "below"))
+    if not heater_on and deficit < override:
+        thresholds.append(
+            Threshold("aux_override", temperature, target - override, "°C", "below")
+        )
+    if supply is not None and not heater_on and start <= deficit < override:
+        thresholds.append(
+            Threshold(
+                "aux_supply",
+                round(supply - temperature, 2),
+                config.number(CONF_AUX_SUPPLY_MARGIN),
+                "K",
+                "below",
+            )
+        )
+    if progress is not None and not progress.stalled:
+        thresholds.append(
+            Threshold(
+                "aux_rise",
+                round(temperature - progress.temperature, 2),
+                AUX_PROGRESS_MIN_RISE,
+                "K",
+                "above",
+            )
+        )
+        upcoming.append(Upcoming("aux_verdict", progress.since + AUX_PROGRESS_WINDOW))
+    if waiting_since is not None:
+        upcoming.append(Upcoming("aux_on", waiting_since + AUX_DWELL))
+    return tuple(thresholds), tuple(upcoming)
 
 
 def _room_message(
@@ -908,6 +1026,84 @@ def _heat_ceiling(config: EffectiveConfig, excess: float | None) -> int | None:
     if excess > config.number(CONF_HEAT_CAP_ABOVE):
         return int(config.number(CONF_FAN_HEAT_CAP))
     return None
+
+
+def _system_outlook(
+    config: EffectiveConfig,
+    inputs: Inputs,
+    hub: dict[str, Any],
+    *,
+    mode: Mode,
+    is_night: bool,
+    lockout_held: bool,
+) -> tuple[tuple[Threshold, ...], tuple[Upcoming, ...]]:
+    """What the unit's decision watches, and what it already knows is coming.
+
+    The same edges the rules turn on, as they stand now: the release that is on
+    is watched for what would turn it off, the one that is off for what would
+    turn it on.
+    """
+    thresholds: list[Threshold] = []
+    upcoming: list[Upcoming] = [_next_night_change(config, inputs.now, is_night)]
+    outdoor = inputs.outdoor.as_number()
+    hysteresis = config.number(CONF_RELEASE_HYSTERESIS)
+
+    if mode is Mode.HEATING:
+        threshold = config.number(CONF_HEAT_RELEASE_BELOW)
+        released = not inputs.heat_release.missing and bool(inputs.heat_release.value)
+        if released:
+            thresholds.append(
+                Threshold("heat_release_off", outdoor, threshold + hysteresis, "°C", "above")
+            )
+        else:
+            thresholds.append(Threshold("heat_release_on", outdoor, threshold, "°C", "below"))
+        forecast = None if inputs.forecast_max is None else inputs.forecast_max.as_number()
+        if forecast is not None:
+            thresholds.append(
+                Threshold(
+                    "forecast_counts",
+                    outdoor,
+                    config.number(CONF_FORECAST_BLOCKS_ABOVE),
+                    "°C",
+                    "above",
+                )
+            )
+            thresholds.append(Threshold("forecast_blocks", forecast, threshold, "°C", "above"))
+        thresholds.append(
+            Threshold("aux_outdoor", outdoor, config.number(CONF_AUX_HEAT_BELOW), "°C", "above")
+        )
+    else:
+        excess = _heat_excess(inputs, hub)
+        if excess is not None:
+            excess = round(excess, 2)
+            thresholds.append(
+                Threshold("fan_heat_cap", excess, config.number(CONF_HEAT_CAP_ABOVE), "K", "above")
+            )
+            thresholds.append(
+                Threshold("fan_off", excess, config.number(CONF_FAN_OFF_ABOVE), "K", "above")
+            )
+
+    if mode is Mode.COOLING:
+        warmest, _ = _warmest_room(inputs)
+        threshold = config.number(CONF_COOL_RELEASE_ABOVE)
+        released = not inputs.cool_release.missing and bool(inputs.cool_release.value)
+        if released:
+            thresholds.append(
+                Threshold("cool_release_off", warmest, threshold - hysteresis, "°C", "below")
+            )
+        else:
+            thresholds.append(Threshold("cool_release_on", warmest, threshold, "°C", "above"))
+        surplus = None if inputs.surplus is None else inputs.surplus.as_number()
+        if surplus is not None and not isinstance(inputs.surplus.value, bool):
+            thresholds.append(
+                Threshold("surplus_on", surplus, config.number(CONF_SURPLUS_START), "W", "above")
+            )
+
+    if lockout_held:
+        release = inputs.cool_release if mode is Mode.COOLING else inputs.heat_release
+        held = release.stable_for or timedelta(0)
+        upcoming.append(Upcoming("release_lockout_ends", inputs.now + RELEASE_LOCKOUT - held))
+    return tuple(thresholds), tuple(upcoming)
 
 
 def _fan_level(
@@ -1227,6 +1423,15 @@ def evaluate(
         co2_high_since=new_state.co2_high_since,
     )
 
+    thresholds, upcoming = _system_outlook(
+        config,
+        inputs,
+        hub,
+        mode=effective_mode,
+        is_night=is_night,
+        lockout_held=not all(gate.passed for gate in gates if gate.name == "release_lockout"),
+    )
+
     decision = SystemDecision(
         timestamp=inputs.now,
         intent=intent,
@@ -1258,6 +1463,8 @@ def evaluate(
         is_night=is_night,
         rooms=rooms,
         gates=tuple(gates),
+        thresholds=thresholds,
+        upcoming=upcoming,
         inputs=raw,
         settings=settings,
         degraded=tuple(dict.fromkeys(degraded)),
