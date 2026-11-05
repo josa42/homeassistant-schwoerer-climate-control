@@ -1548,7 +1548,7 @@ class AuxCard extends SccCard {
     }
     const open = m.rooms.filter((room) => attrs(room.state).window_open);
     gates.push([!open.length, w.windows, open.length ? open.map((r) => r.name).join(", ") : w.allClosed, ""]);
-    const nightOff = m.rooms.filter((room) => setting(room.state, "aux_heat_off_at_night"));
+    const nightOff = m.rooms.filter((room) => gate(room.state, "aux_allowed_now"));
     gates.push([!(a.is_night && nightOff.length), w.nightGate, nightOff.length ? w.offAtNight(nightOff.map((r) => r.name).join(", ")) : w.noneOffAtNight, ""]);
 
     const gateHtml = gates.map(([ok, title, now, near]) => `<div class="tile"><span class="row" style="gap:8px;font-size:14px;font-weight:500"><span class="${ok ? "blue" : "orange"}" style="font-weight:700">${ok ? "✓" : "–"}</span>${esc(title)}</span><span class="small" style="color:var(--scc-text)">${esc(now)}</span>${near ? `<span class="small muted">${esc(near)}</span>` : ""}</div>`).join("");

@@ -634,6 +634,7 @@ def _room_decision(
     outdoor: float | None,
     surplus: bool,
     night_setback: bool = True,
+    aux_at_night: bool = True,
     supply: float | None = None,
     aux_since: datetime | None = None,
     aux_progress: AuxProgress | None = None,
@@ -738,7 +739,8 @@ def _room_decision(
     aux_waiting_since: datetime | None = None
     if room.actuator is ActuatorKind.WGT_ROOM:
         aux_below = config.number(CONF_AUX_HEAT_BELOW)
-        off_at_night = bool(config.get(CONF_AUX_HEAT_OFF_AT_NIGHT))
+        room_off_at_night = bool(config.get(CONF_AUX_HEAT_OFF_AT_NIGHT))
+        off_at_night = room_off_at_night or not aux_at_night
         cold_enough = outdoor is not None and outdoor < aux_below
         running = (
             room.auxiliary_enabled is not None
@@ -763,7 +765,15 @@ def _room_decision(
             )
         )
         if off_at_night:
-            gates.append(Gate("aux_allowed_now", not night, "off at night in this room"))
+            gates.append(
+                Gate(
+                    "aux_allowed_now",
+                    not night,
+                    "off at night in this room"
+                    if room_off_at_night
+                    else "off at night in every room",
+                )
+            )
 
         needed = False
         if temperature is not None:
@@ -1242,11 +1252,14 @@ def evaluate(
     fan_request: FanMode | int,
     holiday: bool,
     night_setback: bool = True,
+    aux_at_night: bool = True,
 ) -> tuple[SystemDecision, EngineState]:
     """Evaluate the unit and every room, and return the decision plus state.
 
     Without the night setback the rooms keep their day setpoint at night. The
-    night still counts for everything else, the fan stage among it.
+    night still counts for everything else, the fan stage among it. Without
+    the auxiliary heaters at night, no room may run its heater at night, whatever
+    the room itself allows.
     """
     # The dwell timers are carried forward before anything can return early, so
     # that a controller switched off for ten minutes does not come back with a
@@ -1381,6 +1394,7 @@ def evaluate(
             outdoor=outdoor,
             surplus=surplus,
             night_setback=night_setback,
+            aux_at_night=aux_at_night,
             supply=supply,
             aux_since=state.aux_needed_since.get(room.room_id),
             aux_progress=state.aux_progress.get(room.room_id),

@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Auxiliary heaters at night**, a switch on the hub. Off, no room runs its
+  auxiliary heater at night; on, each room's own setting decides as before.
+
 ## 1.7.0 - 2026-11-04
 
 ### Added

@@ -235,6 +235,9 @@
       "night_setback": {
         "name": "Nachtabsenkung"
       },
+      "aux_heat_at_night": {
+        "name": "Zuheizer nachts"
+      },
       "dry_run": {
         "name": "Testbetrieb"
       }

@@ -233,6 +233,7 @@ async def test_the_entities_appear(hass: HomeAssistant, entry, unit, setup_entry
         "switch.schworer_climate_control_holiday",
         "switch.schworer_climate_control_dry_run",
         "switch.schworer_climate_control_night_setback",
+        "switch.schworer_climate_control_auxiliary_heaters_at_night",
         "select.schworer_climate_control_mode",
         "select.schworer_climate_control_fan",
         "select.schworer_climate_control_fan_level_at_night",

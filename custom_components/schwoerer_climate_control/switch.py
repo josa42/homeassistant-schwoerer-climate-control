@@ -25,6 +25,7 @@ async def async_setup_entry(
             ActiveSwitch(coordinator),
             HolidaySwitch(coordinator),
             NightSetbackSwitch(coordinator),
+            AuxAtNightSwitch(coordinator),
             DryRunSwitch(coordinator),
         ]
     )
@@ -108,6 +109,33 @@ class NightSetbackSwitch(HubEntity, SwitchEntity, RestoreEntity):
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         await self.coordinator.async_set_night_setback(False)
+        self.async_write_ha_state()
+
+
+class AuxAtNightSwitch(HubEntity, SwitchEntity, RestoreEntity):
+    """Whether the auxiliary heaters may run at night at all.
+
+    Off, no room runs its heater at night. On, each room's own setting decides.
+    """
+
+    def __init__(self, coordinator: ClimateControlCoordinator) -> None:
+        super().__init__(coordinator, "aux_heat_at_night")
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        if (last := await self.async_get_last_state()) is not None:
+            await self.coordinator.async_set_aux_at_night(last.state == STATE_ON)
+
+    @property
+    def is_on(self) -> bool:
+        return self.coordinator.aux_at_night
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        await self.coordinator.async_set_aux_at_night(True)
+        self.async_write_ha_state()
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        await self.coordinator.async_set_aux_at_night(False)
         self.async_write_ha_state()
 
 

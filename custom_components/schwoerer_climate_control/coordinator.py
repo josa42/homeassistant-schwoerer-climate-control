@@ -174,6 +174,7 @@ class ClimateControlCoordinator(DataUpdateCoordinator[SystemDecision]):
         # turn it off without a reload. On for a fresh install.
         self.dry_run = bool({**entry.data, **entry.options}.get(CONF_DRY_RUN, True))
         self.night_setback = True
+        self.aux_at_night = True
         # The values the room and hub entities hold, over the configuration they
         # started from. Empty until the entities have restored.
         self.hub_settings: dict[str, Any] = {}
@@ -281,6 +282,10 @@ class ClimateControlCoordinator(DataUpdateCoordinator[SystemDecision]):
 
     async def async_set_night_setback(self, night_setback: bool) -> None:
         self.night_setback = night_setback
+        self._act_now()
+
+    async def async_set_aux_at_night(self, aux_at_night: bool) -> None:
+        self.aux_at_night = aux_at_night
         self._act_now()
 
     async def async_set_hub_setting(
@@ -624,6 +629,7 @@ class ClimateControlCoordinator(DataUpdateCoordinator[SystemDecision]):
             fan_request=self.fan_request,
             holiday=self.holiday,
             night_setback=self.night_setback,
+            aux_at_night=self.aux_at_night,
         )
         # A head start is used once. Taken up, the engine carries it on.
         self._resumed_progress = {

@@ -98,6 +98,7 @@ def run(
     fan_request: Any = FanMode.AUTOMATIC,
     holiday: bool = False,
     night_setback: bool = True,
+    aux_at_night: bool = True,
 ):
     return evaluate(
         inputs or given(),
@@ -108,6 +109,7 @@ def run(
         fan_request=fan_request,
         holiday=holiday,
         night_setback=night_setback,
+        aux_at_night=aux_at_night,
     )
 
 
@@ -320,6 +322,21 @@ def test_the_auxiliary_heater_is_off_at_night_in_a_bedroom() -> None:
     by_name = {room.room_id: room for room in decision.rooms}
     assert by_name["schlafzimmer"].auxiliary_heat is False
     assert by_name["wohnzimmer"].auxiliary_heat is True
+
+
+def test_without_the_auxiliary_heaters_at_night_no_room_runs_one_at_night() -> None:
+    living = a_cold_room(temperature=read(18.0))
+    state = waited("wohnzimmer", now=NIGHT)
+    decision, _ = run(given(now=NIGHT, rooms=(living,)), state=state, aux_at_night=False)
+    room = decision.rooms[0]
+    assert room.auxiliary_heat is False
+    assert room.gate_passed("aux_allowed_now") is False
+
+
+def test_without_the_auxiliary_heaters_at_night_they_still_run_by_day() -> None:
+    inputs = given(outdoor=read(5.0), rooms=(a_cold_room(),))
+    decision, _ = run(inputs, state=waited("wohnzimmer"), aux_at_night=False)
+    assert decision.rooms[0].auxiliary_heat is True
 
 
 def test_a_room_at_its_setpoint_needs_no_auxiliary_heater() -> None:

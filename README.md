@@ -52,7 +52,8 @@ level it came from.
 
 The values you change in daily life are entities instead, so an automation can
 set them and the history shows when they changed: each room's setpoint by day and
-at night, the fan stage at night, and whether the night setback applies at all.
+at night, the fan stage at night, whether the night setback applies at all, and
+whether the auxiliary heaters may run at night.
 They start from what the configuration said and hold their own value from then
 on. The hub's setpoints are what a new room starts from.
 
@@ -267,12 +268,16 @@ reaches the unit.
 
 | Device | Entities |
 | --- | --- |
-| Central | Active, holiday, night setback and dry run switches, mode, fan and fan-level-at-night selects, decision sensor, inputs-missing indicator, heat recovery sensor |
+| Central | Active, holiday, night setback, auxiliary heaters at night and dry run switches, mode, fan and fan-level-at-night selects, decision sensor, inputs-missing indicator, heat recovery sensor |
 | Each room | Target temperature and target temperature at night, decision sensor |
 
 **Night setback** off keeps every room at its day setpoint at night. The night
 still counts for the rest, so the fan runs its night stage either way, which
 *Fan level at night* sets.
+
+**Auxiliary heaters at night** off keeps every room's auxiliary heater off at
+night, whatever the room's own setting says. On, each room decides for itself
+with *No auxiliary heat at night*.
 
 **Active** off means no register is written at all. The unit keeps running on its
 last values and the decision sensors keep showing what the controller would do,

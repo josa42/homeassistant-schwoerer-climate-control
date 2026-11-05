@@ -235,6 +235,9 @@
       "night_setback": {
         "name": "Night setback"
       },
+      "aux_heat_at_night": {
+        "name": "Auxiliary heaters at night"
+      },
       "dry_run": {
         "name": "Dry run"
       }
