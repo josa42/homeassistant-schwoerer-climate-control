@@ -389,11 +389,12 @@ pump release is reported, which is what `automation.heizung` does today.
 | Input | Effect |
 | --- | --- |
 | Weather forecast | The day's maximum instead of the instantaneous reading for the heat pump release, the trigger for night cooling in cooling mode, and later an input to automating the mode. |
-| Energy to spare | Raises setpoints while it is available, and is the condition for cooling with the compressor at all. The reason has to explain why it is 21.5 rather than 20.0 °C. |
+| Energy signal | Four levels after SG Ready: saving lowers setpoints and keeps the auxiliary heaters and cooling off, surplus raises setpoints and is the condition for cooling with the compressor at all, plenty raises them further and frees the auxiliary heaters from their gates. The reason has to explain why it is 21.5 rather than 20.0 °C. |
 | Door contacts | Fed into the same window-open logic, several contacts per room. |
 
 What counts as spare is the house's own judgement rather than this integration's.
-An on/off entity is taken at its word and acts at once; a number is read against a
+An entity stating a level (`blocked`, `normal`, `recommended`, `forced`) or on/off
+is taken at its word and acts at once; a number is read against a
 start and a stop threshold, with the stop lower so that spending the surplus does
 not immediately withdraw the reason for spending it. Production is not surplus: in
 a house with a battery, a tariff and a car, 2 kW of production under 2 kW of load

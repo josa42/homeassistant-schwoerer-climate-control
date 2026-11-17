@@ -30,6 +30,7 @@ from .const import (
     CONF_AUX_HEAT_BELOW,
     CONF_AUX_HEAT_OFF_AT_NIGHT,
     CONF_AUX_SUPPLY_MARGIN,
+    CONF_BLOCKED_TARGET_DROP,
     CONF_CO2_HIGH,
     CONF_COOL_RELEASE_ABOVE,
     CONF_FAN_AIR_QUALITY,
@@ -42,6 +43,8 @@ from .const import (
     CONF_FAN_NORMAL,
     CONF_FAN_OFF_ABOVE,
     CONF_FAN_QUIET_MAX,
+    CONF_FORCED_COOL_DROP,
+    CONF_FORCED_TARGET_BOOST,
     CONF_FORECAST_BLOCKS_ABOVE,
     CONF_FROST_PROTECTION_BELOW,
     CONF_HEAT_CAP_ABOVE,
@@ -50,6 +53,7 @@ from .const import (
     CONF_NIGHT_END,
     CONF_NIGHT_START,
     CONF_RELEASE_HYSTERESIS,
+    CONF_SURPLUS_FORCED,
     CONF_SURPLUS_START,
     CONF_SURPLUS_STOP,
     CONF_SURPLUS_TARGET_BOOST,
@@ -70,6 +74,7 @@ from .const import (
     TARGET_MIN,
     TARGET_RESOLUTION,
     ActuatorKind,
+    EnergyLevel,
     FanMode,
     FanReason,
     HeatingCoolingFunction,
@@ -128,7 +133,7 @@ class Inputs:
     #: decides whether the heat pump is getting a room warm on its own.
     supply_air: Reading | None = None
     forecast_max: Reading | None = None
-    #: Whether there is energy to spare, as the house itself defines it. An
+    #: The energy signal, as the house itself defines it. An energy level or an
     #: on/off entity is taken at its word; a number is read against thresholds.
     surplus: Reading | None = None
     #: The releases as the device reports them, with how long they have held.
@@ -162,6 +167,8 @@ class EngineState:
 
     co2_high_since: Mapping[str, datetime] = field(default_factory=dict)
     surplus_since: datetime | None = None
+    #: Since when a number has been above the forced threshold.
+    forced_since: datetime | None = None
     #: Per room, since when its auxiliary heater has been wanted and not yet
     #: switched on.
     aux_needed_since: Mapping[str, datetime] = field(default_factory=dict)
@@ -254,42 +261,58 @@ def _track_co2(
     return tracked
 
 
-def _surplus(
+def _energy(
     inputs: Inputs, hub: dict[str, Any], state: EngineState
-) -> tuple[datetime | None, bool, str]:
-    """Since when there has been surplus, whether it counts yet, and why.
+) -> tuple[datetime | None, datetime | None, EnergyLevel, str, bool]:
+    """What the energy signal says, and why.
 
-    An on/off entity is the house's own judgement and takes effect at once: the
-    dwell time would only delay a decision somebody has already made. A number
-    gets the dwell, and a stop threshold below the start one, so that spending
-    the surplus does not immediately withdraw the reason for spending it.
+    Returns since when a number has been above the start and above the forced
+    threshold, the level that counts, its detail, and whether the signal failed.
+
+    A stated level and an on/off entity are the house's own judgement and take
+    effect at once: a dwell time would only delay a decision somebody has
+    already made. A number gets the dwell, and a stop threshold below the start
+    one, so that spending the surplus does not immediately withdraw the reason
+    for spending it. Without a signal it is normal.
     """
     reading = inputs.surplus
-    if reading is None or reading.missing:
-        return None, False, "none configured"
+    if reading is None:
+        return None, None, EnergyLevel.NORMAL, "none configured", False
+    if reading.missing:
+        return None, None, EnergyLevel.NORMAL, "unreadable", True
 
     config = EffectiveConfig(hub)
     value = reading.value
+    if isinstance(value, str) and value in tuple(EnergyLevel):
+        return None, None, EnergyLevel(value), "stated by the signal", False
     if isinstance(value, bool) or str(value) in ("on", "off"):
         available = value is True or str(value) == "on"
-        return (
-            inputs.now if available else None,
-            available,
-            "yes" if available else "no",
-        )
+        level = EnergyLevel.RECOMMENDED if available else EnergyLevel.NORMAL
+        return None, None, level, "on" if available else "off", False
 
     number = reading.as_number()
     if number is None:
-        return None, False, "unreadable"
+        return None, None, EnergyLevel.NORMAL, f"unknown state {value}", True
 
-    running = state.surplus_since is not None
-    limit = config.number(CONF_SURPLUS_STOP if running else CONF_SURPLUS_START)
+    start = config.number(CONF_SURPLUS_START)
+    stop = config.number(CONF_SURPLUS_STOP)
+    limit = stop if state.surplus_since is not None else start
     if number < limit:
-        return None, False, f"{number} below {limit}"
-
+        return None, None, EnergyLevel.NORMAL, f"{number} below {limit}", False
     since = state.surplus_since or inputs.now
-    held = inputs.now - since
-    return since, held >= SURPLUS_DWELL, f"{number} at or above {limit}"
+
+    forced = config.number(CONF_SURPLUS_FORCED)
+    if state.forced_since is not None:
+        forced -= start - stop
+    forced_since = (state.forced_since or inputs.now) if number >= forced else None
+
+    if forced_since is not None and inputs.now - forced_since >= SURPLUS_DWELL:
+        level, detail = EnergyLevel.FORCED, f"{number} at or above {forced}"
+    elif inputs.now - since >= SURPLUS_DWELL:
+        level, detail = EnergyLevel.RECOMMENDED, f"{number} at or above {limit}"
+    else:
+        level, detail = EnergyLevel.NORMAL, f"{number} at or above {limit}, not for long"
+    return since, forced_since, level, detail, False
 
 
 def _frost_rooms(inputs: Inputs, hub: dict[str, Any]) -> tuple[str, ...]:
@@ -444,7 +467,7 @@ def _warmest_room(inputs: Inputs) -> tuple[float | None, str | None]:
 
 
 def _cool_wanted(
-    config: EffectiveConfig, inputs: Inputs, *, surplus: bool, surplus_detail: str
+    config: EffectiveConfig, inputs: Inputs, *, energy: EnergyLevel, energy_detail: str
 ) -> tuple[bool, Reason, list[Gate], str | None]:
     """Whether the heat pump should be released for cooling, and why.
 
@@ -467,12 +490,16 @@ def _cool_wanted(
             warm_enough,
             f"{whose} at {warmest} > {limit}" if warmest is not None else "no reading",
         ),
-        Gate("surplus", surplus, surplus_detail),
+        Gate(
+            "surplus",
+            energy in (EnergyLevel.RECOMMENDED, EnergyLevel.FORCED),
+            f"{energy}, {energy_detail}",
+        ),
     ]
 
     if not warm_enough:
         return False, Reason.COOL_NOT_NEEDED, gates, None
-    if not surplus:
+    if energy not in (EnergyLevel.RECOMMENDED, EnergyLevel.FORCED):
         return False, Reason.COOL_NO_SURPLUS, gates, None
     return True, Reason.COOL_RELEASED, gates, whose
 
@@ -518,6 +545,7 @@ def _aux_needed(
     supply: float | None,
     running: bool,
     progress: AuxProgress | None,
+    forced: bool = False,
 ) -> tuple[bool, list[Gate], str, AuxProgress | None]:
     """Whether a room needs more heat than the supply air is bringing it.
 
@@ -536,6 +564,8 @@ def _aux_needed(
     its setpoint, or until the supply air clears the margin by a further kelvin
     when it was the supply air that switched it on. The last value is the
     progress to carry, ``None`` once the room is not waiting on the heat pump.
+
+    With plenty of surplus none of that is asked: being short is enough.
     """
     deficit = round(target - temperature, 2)
     start = config.number(CONF_AUX_DEFICIT)
@@ -552,6 +582,10 @@ def _aux_needed(
     ]
     if not below:
         return False, gates, "", None
+
+    if forced:
+        gates.append(Gate("aux_surplus_forced", True, "plenty of surplus"))
+        return True, gates, f"the room is {deficit:.1f} K short with plenty of surplus", None
 
     if deficit >= override:
         # However warm the supply air, a room this far off is not catching up
@@ -619,6 +653,10 @@ SYSTEM_SETTINGS: tuple[str, ...] = (
     CONF_SURPLUS_START,
     CONF_SURPLUS_STOP,
     CONF_SURPLUS_TARGET_BOOST,
+    CONF_SURPLUS_FORCED,
+    CONF_FORCED_TARGET_BOOST,
+    CONF_FORCED_COOL_DROP,
+    CONF_BLOCKED_TARGET_DROP,
     CONF_NIGHT_START,
     CONF_NIGHT_END,
 )
@@ -634,7 +672,7 @@ def _room_decision(
     holiday: bool,
     heating_active: bool,
     outdoor: float | None,
-    surplus: bool,
+    energy: EnergyLevel = EnergyLevel.NORMAL,
     night_setback: bool = True,
     aux_at_night: bool = True,
     supply: float | None = None,
@@ -702,6 +740,9 @@ def _room_decision(
         else:
             target = config.number(CONF_TARGET_COOL)
             intent, reason = RoomIntent.COOLING, RoomReason.COOLING
+            if energy is EnergyLevel.FORCED:
+                target -= config.number(CONF_FORCED_COOL_DROP)
+                reason = RoomReason.SURPLUS_FORCED
     else:
         if window_open:
             target = config.number(CONF_TARGET_WINDOW_OPEN)
@@ -718,10 +759,18 @@ def _room_decision(
 
         # Surplus is only worth storing in a house that is occupied and shut.
         # Dumping it into an empty room or one with the window open is paying
-        # attention to the inverter instead of to the house.
-        if mode is Mode.HEATING and surplus and not window_open and not holiday:
-            target += config.number(CONF_SURPLUS_TARGET_BOOST)
-            reason = RoomReason.SURPLUS
+        # attention to the inverter instead of to the house. Saving follows the
+        # same rule, because those rooms are already as low as they go.
+        if mode is Mode.HEATING and not window_open and not holiday:
+            if energy is EnergyLevel.RECOMMENDED:
+                target += config.number(CONF_SURPLUS_TARGET_BOOST)
+                reason = RoomReason.SURPLUS
+            elif energy is EnergyLevel.FORCED:
+                target += config.number(CONF_FORCED_TARGET_BOOST)
+                reason = RoomReason.SURPLUS_FORCED
+            elif energy is EnergyLevel.BLOCKED:
+                target -= config.number(CONF_BLOCKED_TARGET_DROP)
+                reason = RoomReason.ENERGY_BLOCKED
 
         if mode is Mode.VENTILATION:
             # The setpoint is still written, so the device shows a sensible
@@ -757,16 +806,21 @@ def _room_decision(
             and not room.auxiliary_enabled.missing
             and bool(room.auxiliary_enabled.value)
         )
+        # With plenty of surplus the heater is not the expensive stage any more,
+        # so what keeps it for the cold and the day does not apply. The mode
+        # still does, and so does an open window: that heat would go outside.
+        forced = mode is Mode.HEATING and energy is EnergyLevel.FORCED
         allowed = (
             mode is Mode.HEATING
-            and heating_active
-            and cold_enough
+            and (forced or (heating_active and cold_enough and not (night and off_at_night)))
+            and energy is not EnergyLevel.BLOCKED
             and not window_open
-            and not (night and off_at_night)
             # Without a room temperature there is no way to tell whether the
             # second stage is needed, and the expensive one stays off.
             and temperature is not None
         )
+        if energy is EnergyLevel.BLOCKED:
+            gates.append(Gate("aux_energy_allows", False, "energy signal blocked"))
         gates.append(
             Gate(
                 "aux_outdoor_cold",
@@ -778,10 +832,9 @@ def _room_decision(
             gates.append(
                 Gate(
                     "aux_allowed_now",
-                    not night,
-                    "off at night in this room"
-                    if room_off_at_night
-                    else "off at night in every room",
+                    not night or forced,
+                    ("off at night in this room" if room_off_at_night else "off at night in every room")
+                    + (", but plenty of surplus" if night and forced else ""),
                 )
             )
 
@@ -795,6 +848,7 @@ def _room_decision(
                 supply=supply,
                 running=running,
                 progress=aux_progress,
+                forced=forced,
             )
             gates.extend(need_gates)
         if not allowed:
@@ -997,6 +1051,11 @@ def _room_message(
     elif reason is RoomReason.SURPLUS:
         boost = config.number(CONF_SURPLUS_TARGET_BOOST)
         head = f"Surplus, target raised by {boost} K to {target} °C"
+    elif reason is RoomReason.SURPLUS_FORCED:
+        head = f"Plenty of surplus, target {target} °C"
+    elif reason is RoomReason.ENERGY_BLOCKED:
+        drop = config.number(CONF_BLOCKED_TARGET_DROP)
+        head = f"Saving energy, target lowered by {drop} K to {target} °C"
     elif reason is RoomReason.BOOST:
         head = f"Boost, target {target} °C"
     else:
@@ -1124,6 +1183,11 @@ def _system_outlook(
         if surplus is not None and not isinstance(inputs.surplus.value, bool):
             thresholds.append(
                 Threshold("surplus_on", surplus, config.number(CONF_SURPLUS_START), "W", "above")
+            )
+            thresholds.append(
+                Threshold(
+                    "surplus_forced", surplus, config.number(CONF_SURPLUS_FORCED), "W", "above"
+                )
             )
 
     if lockout_held:
@@ -1281,10 +1345,13 @@ def evaluate(
     # The dwell timers are carried forward before anything can return early, so
     # that a controller switched off for ten minutes does not come back with a
     # fresh timer and a fan that has forgotten the bathroom.
-    surplus_since, surplus, surplus_detail = _surplus(inputs, hub, state)
+    surplus_since, forced_since, energy, energy_detail, energy_failed = _energy(
+        inputs, hub, state
+    )
     new_state = EngineState(
         co2_high_since=_track_co2(inputs, hub, state),
         surplus_since=surplus_since,
+        forced_since=forced_since,
         # Unlike the fan and the surplus, the heater has to wait again after a
         # break: nothing watched the room meanwhile, and switching on the most
         # expensive heat in the house on an old timer is the wrong way to err.
@@ -1316,7 +1383,6 @@ def evaluate(
                 holiday=holiday,
                 heating_active=False,
                 outdoor=None,
-                surplus=False,
             )[0]
             for room in inputs.rooms
         )
@@ -1338,6 +1404,8 @@ def evaluate(
 
     frost = _frost_rooms(inputs, hub)
     effective_mode, outdoor_gate, degraded = _resolve_mode(mode, inputs, frost)
+    if energy_failed:
+        degraded.append("surplus")
     gates = [outdoor_gate, Gate("frost_protection", not frost, "; ".join(frost))]
     outdoor = inputs.outdoor.as_number()
 
@@ -1362,7 +1430,7 @@ def evaluate(
             reason = Reason.RELEASE_LOCKED
     elif effective_mode is Mode.COOLING:
         wanted, reason, cool_gates, _ = _cool_wanted(
-            config, inputs, surplus=surplus, surplus_detail=surplus_detail
+            config, inputs, energy=energy, energy_detail=energy_detail
         )
         gates.extend(cool_gates)
         cool_release, lockout = _release(
@@ -1409,7 +1477,7 @@ def evaluate(
             holiday=holiday,
             heating_active=bool(heating_active),
             outdoor=outdoor,
-            surplus=surplus,
+            energy=energy,
             night_setback=night_setback,
             aux_at_night=aux_at_night,
             supply=supply,
@@ -1479,6 +1547,7 @@ def evaluate(
             fan_requested_by=fan_requested_by,
             fan_capped_from=fan_capped_from,
             aux_rooms=tuple(room.name for room in aux_rooms if room.auxiliary_heat),
+            energy=energy,
         ),
         mode=effective_mode,
         requested_mode=mode,
@@ -1492,6 +1561,7 @@ def evaluate(
         fan_requested_by=fan_requested_by,
         fan_capped_from=fan_capped_from,
         is_night=is_night,
+        energy=energy,
         rooms=rooms,
         gates=tuple(gates),
         thresholds=thresholds,
@@ -1516,6 +1586,7 @@ def _system_message(
     fan_requested_by: str | None,
     fan_capped_from: int | None,
     aux_rooms: tuple[str, ...] = (),
+    energy: EnergyLevel = EnergyLevel.NORMAL,
 ) -> str:
     """One sentence for the system decision."""
     threshold = config.number(CONF_HEAT_RELEASE_BELOW)
@@ -1548,4 +1619,6 @@ def _system_message(
         fan += f", capped from {fan_capped_from}"
     if aux_rooms:
         fan += f", auxiliary heat in {', '.join(aux_rooms)}"
+    if energy is not EnergyLevel.NORMAL:
+        fan += f", energy {energy}"
     return f"{head}. Mode {mode}, {fan}"

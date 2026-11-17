@@ -15,6 +15,7 @@ from typing import Any
 from .const import (
     DEFAULTS,
     OVERRIDABLE,
+    EnergyLevel,
     FanReason,
     HeatingCoolingFunction,
     Intent,
@@ -306,6 +307,8 @@ class SystemDecision:
     #: Set when the fan mode held the level below what the rules asked for.
     fan_capped_from: int | None = None
     is_night: bool = False
+    #: What the energy signal said, after reading it against the thresholds.
+    energy: EnergyLevel = EnergyLevel.NORMAL
     rooms: tuple[RoomDecision, ...] = ()
     gates: tuple[Gate, ...] = ()
     thresholds: tuple[Threshold, ...] = ()
@@ -339,6 +342,7 @@ class SystemDecision:
             "fan_requested_by": self.fan_requested_by,
             "fan_capped_from": self.fan_capped_from,
             "is_night": self.is_night,
+            "energy": str(self.energy),
             "outdoor_temperature": self.inputs.get("outdoor", {}).get("value"),
             "failed_inputs": list(self.degraded),
         }
@@ -354,6 +358,7 @@ class SystemDecision:
             self.auxiliary_heat_house,
             self.fan_level,
             None if self.fan_reason is None else str(self.fan_reason),
+            str(self.energy),
         )
 
     def as_dict(self) -> dict[str, Any]:
@@ -379,6 +384,7 @@ class SystemDecision:
             "fan_requested_by": self.fan_requested_by,
             "fan_capped_from": self.fan_capped_from,
             "is_night": self.is_night,
+            "energy": str(self.energy),
             "gates": [gate.as_dict() for gate in self.gates],
             "thresholds": [threshold.as_dict() for threshold in self.thresholds],
             "upcoming": [event.as_dict() for event in self.upcoming],

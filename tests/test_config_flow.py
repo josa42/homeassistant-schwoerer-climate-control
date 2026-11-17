@@ -11,16 +11,21 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.schwoerer_climate_control.const import (
     CONF_AUX_HOUSE_SWITCH,
+    CONF_BLOCKED_TARGET_DROP,
     CONF_CLIMATE_ENTITY,
     CONF_DRY_RUN,
     CONF_FAN_SELECT,
     CONF_NAME,
     CONF_OUTDOOR_SENSOR,
+    CONF_SURPLUS_ENTITY,
+    CONF_SURPLUS_FORCED,
     CONF_TARGET_HOLIDAY,
     CONF_TARGET_NORMAL,
     CONF_TEMPERATURE_SENSOR,
     DOMAIN,
     SUBENTRY_TYPE_ROOM,
+    EnergyLevel,
+    Mode,
 )
 from custom_components.schwoerer_climate_control.discovery import (
     discover_rooms,
@@ -391,3 +396,38 @@ async def test_a_room_may_keep_its_own_thermostat_when_reconfigured(
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "reconfigure_successful"
     assert entry.subentries[subentry_id].data[CONF_TARGET_HOLIDAY] == 17.5
+
+
+async def test_the_energy_settings_are_asked_for_and_used(
+    hass: HomeAssistant, entry, unit, setup_entry
+) -> None:
+    unit()
+    hass.states.async_set("input_select.energy", "blocked")
+    await setup_entry(entry)
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "thresholds"}
+    )
+    defaults = {str(marker): marker.default() for marker in result["data_schema"].schema}
+    assert defaults[CONF_SURPLUS_FORCED] == 2500.0
+    assert defaults[CONF_BLOCKED_TARGET_DROP] == 1.0
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {**defaults, CONF_BLOCKED_TARGET_DROP: 2.0}
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    await hass.async_block_till_done()
+
+    # An input_select is one of the kinds the signal may be.
+    result = await open_entities(hass, entry)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {**HUB_DATA, CONF_SURPLUS_ENTITY: "input_select.energy"}
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    await hass.async_block_till_done()
+
+    coordinator = entry.runtime_data
+    await coordinator.async_set_mode(Mode.HEATING)
+    await hass.async_block_till_done()
+    assert coordinator.data.energy is EnergyLevel.BLOCKED
+    assert coordinator.data.rooms[0].target_temperature == 18.0

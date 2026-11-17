@@ -196,6 +196,23 @@ class Reason(StrEnum):
     FORECAST_WARM = "forecast_warm"
 
 
+class EnergyLevel(StrEnum):
+    """What the house says about its electricity, after SG Ready's four states.
+
+    The signal comes from outside, and what each level means for the house is
+    decided here: which comforts it pays for and which it holds back.
+    """
+
+    #: SG Ready 1: electricity is expensive or scarce, only what is needed.
+    BLOCKED = "blocked"
+    #: SG Ready 2.
+    NORMAL = "normal"
+    #: SG Ready 3: there is energy to spare, using more is welcome.
+    RECOMMENDED = "recommended"
+    #: SG Ready 4: plenty to spare, use whatever can be used.
+    FORCED = "forced"
+
+
 class FanReason(StrEnum):
     """Why the fan level is what it is."""
 
@@ -226,6 +243,8 @@ class RoomReason(StrEnum):
     COOLING = "cooling"
     VENTILATION_ONLY = "ventilation_only"
     SURPLUS = "surplus"
+    SURPLUS_FORCED = "surplus_forced"
+    ENERGY_BLOCKED = "energy_blocked"
     BOOST = "boost"
 
 
@@ -273,15 +292,19 @@ CONF_NOTIFY_SERVICE = "notify_service"
 #: ones. Each line is what the logbook gets.
 CONF_NOTIFY_EVERY_CHANGE = "notify_every_change"
 
-#: What counts as having energy to spare, which is a policy question rather than
-#: a measurement: a house with a battery, a tariff and a car has to decide for
-#: itself. An on/off entity is read as it stands; a number is read against the
-#: two thresholds below. Used both for cooling and for raising setpoints.
+#: The energy signal: whether there is electricity to spare, which is a policy
+#: question rather than a measurement. A house with a battery, a tariff and a car
+#: has to decide for itself. An entity stating an EnergyLevel is taken at its
+#: word, an on/off entity means recommended or normal, and a number is read
+#: against the thresholds below.
 CONF_SURPLUS_ENTITY = "surplus_entity"
 CONF_SURPLUS_START = "surplus_start"
 #: Lower than the start, so that spending the surplus does not immediately
 #: withdraw the reason for spending it.
 CONF_SURPLUS_STOP = "surplus_stop"
+#: From here a number counts as forced. It falls back by the same band the
+#: start and the stop are apart.
+CONF_SURPLUS_FORCED = "surplus_forced"
 #: What the unit draws, from a meter of the user's own. Only the dashboard reads
 #: it; no decision depends on it.
 CONF_POWER_SENSOR = "power_sensor"
@@ -348,8 +371,11 @@ CONF_FAN_HEAT_PUMP = "fan_heat_pump"
 CONF_HUMIDITY_HIGH = "humidity_high"
 CONF_CO2_HIGH = "co2_high"
 
-# What surplus is spent on.
+# What each energy level does to the setpoints.
 CONF_SURPLUS_TARGET_BOOST = "surplus_target_boost"
+CONF_FORCED_TARGET_BOOST = "forced_target_boost"
+CONF_FORCED_COOL_DROP = "forced_cool_drop"
+CONF_BLOCKED_TARGET_DROP = "blocked_target_drop"
 
 # Not ventilating against the heat. The reference is the extract air, because
 # that is what decides the temperature the supply air arrives at.
@@ -404,7 +430,11 @@ DEFAULTS: dict[str, object] = {
     CONF_CO2_HIGH: 1000.0,
     CONF_SURPLUS_START: 800.0,
     CONF_SURPLUS_STOP: 100.0,
+    CONF_SURPLUS_FORCED: 2500.0,
     CONF_SURPLUS_TARGET_BOOST: 1.0,
+    CONF_FORCED_TARGET_BOOST: 2.0,
+    CONF_FORCED_COOL_DROP: 1.0,
+    CONF_BLOCKED_TARGET_DROP: 1.0,
     # Below three kelvin the supply air arrives within a few tenths of the
     # extract air, so there is nothing worth protecting against.
     CONF_HEAT_CAP_ABOVE: 3.0,

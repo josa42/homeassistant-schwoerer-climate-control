@@ -8,6 +8,18 @@
   goes to 30 °C and its heater runs at once, whatever the mode, the window, the
   outdoor temperature or the night say. Meant for an automation that decides
   when, such as a towel rail in the bathroom.
+- **Energy signal**, after SG Ready's four levels. The entity that said whether
+  there is energy to spare may now state a level: `blocked`, `normal`,
+  `recommended` or `forced`, as the enum sensor of an energy manager does. A
+  number in watts reaches `forced` above a new threshold. `blocked` lowers the
+  heating setpoints by 1 K and keeps the auxiliary heaters and cooling off;
+  `forced` raises them by 2 K, lowers the cooling target by 1 K, and runs an
+  auxiliary heater whenever its room is short, whatever the outdoor temperature,
+  the release or the night say. The system decision names the level as `energy`.
+
+### Changed
+
+- An energy signal that cannot be read now appears under **Inputs missing**.
 
 ## 1.8.0 - 2026-11-05
 
