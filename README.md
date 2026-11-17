@@ -175,6 +175,7 @@ A room's auxiliary heater is the expensive second stage, so it is only released
 when the heat pump cannot get the room warm on its own. All of this has to hold:
 
 - the mode is heating and the heat pump is released,
+- the energy signal does not say `blocked`,
 - it is colder outside than *auxiliary heat below* (10 °C),
 - the window is shut, and it is not night in a room that has the heater off at
   night,
@@ -234,11 +235,47 @@ suggested again.
 The thresholds and the progress window are first estimates, see
 [docs/todos/aux-heat-thresholds.md](docs/todos/aux-heat-thresholds.md).
 
-Cooling with the compressor only runs while there is energy to spare. It is the
-one expensive thing here, and it waits for a surplus rather than for demand. What
-counts as spare is yours to define: give it an on/off entity and it is taken at
-its word, or a number read against two thresholds. Production is not surplus, so
-in a house with a battery a template sensor of your own is the honest answer.
+### The energy signal
+
+Whether there is electricity to spare is a question for the whole house, not for
+this integration: a battery, a tariff and a car all have a say. So it reads one
+entity, the *energy signal* under **Configure** → **Entities**, and does with it
+what the four levels of SG Ready suggest:
+
+| Level | SG Ready | Setpoints while heating | Auxiliary heaters | Cooling |
+| --- | --- | --- | --- | --- |
+| `blocked` | 1 | 1 K lower | Off | Off |
+| `normal` | 2 | As set | As above | Off |
+| `recommended` | 3 | 1 K higher | As above | Allowed |
+| `forced` | 4 | 2 K higher | On while short of the target, see below | Allowed, target 1 K lower |
+
+The heat pump is released as usual on every level. It is the efficient heat in
+the house, and frost protection rests on it. Rooms on holiday or with a window
+open keep their setpoint, because they are already as low as they go and stored
+heat would not stay in them. A boost wins over every level, saving included.
+
+With `forced` the auxiliary heater is no longer the expensive stage, so what keeps
+it for cold days does not apply: the heat pump release, the outdoor temperature,
+the night and the supply air. A room in heating mode that is *auxiliary heat from
+this far below target* short of its raised setpoint gets its heater after the
+usual 15 minutes, and keeps it until it reaches the setpoint. An open window
+still keeps it off.
+
+The entity can be one of three kinds:
+
+- **A level**, such as the enum sensor of an energy manager or an `input_select`
+  with the options `blocked`, `normal`, `recommended` and `forced`. It is taken at
+  its word, at once. Its own integration owns the hysteresis.
+- **On or off**: on is `recommended`, off is `normal`, at once.
+- **A number in watts**, read against thresholds under **Configure** →
+  **Temperatures, thresholds and fan levels**: `recommended` from 800 W, held
+  until it falls below 100 W, and `forced` from 2500 W, held until 700 W below
+  that. Either has to hold for 20 minutes first.
+
+Production is not surplus, so in a house with a battery the first kind is the
+honest answer. Without an entity the level is `normal`. One that cannot be read
+counts as `normal` and appears under **Inputs missing**. The system decision
+carries the level that applied as `energy`, and the offsets are hub settings.
 
 <br><br>
 

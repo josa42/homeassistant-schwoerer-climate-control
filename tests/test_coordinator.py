@@ -17,9 +17,11 @@ from pytest_homeassistant_custom_component.common import (
 from custom_components.schwoerer_climate_control.const import (
     CONF_AUX_HOUSE_SWITCH,
     CONF_SUPPLY_AIR_SENSOR,
+    CONF_SURPLUS_ENTITY,
     DOMAIN,
     STUCK_AFTER,
     SUBENTRY_TYPE_ROOM,
+    EnergyLevel,
     Mode,
     RoomReason,
 )
@@ -717,3 +719,52 @@ async def test_a_room_no_longer_short_does_not_take_up_the_dwell(
     coordinator = await start_with_history(19.9, decision=decision, current=19.9)
     assert coordinator.data.rooms[0].auxiliary_heat is False
     assert "wohnzimmer" not in coordinator.engine_state.aux_needed_since
+
+
+ENERGY_SIGNAL = "sensor.energy_signal"
+
+
+async def test_an_energy_managers_signal_drives_the_rooms(
+    hass: HomeAssistant, unit
+) -> None:
+    # The enum sensor an energy manager publishes, read as it stands.
+    unit()
+    hass.states.async_set(ENERGY_SIGNAL, "forced")
+    mock_entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="Schwörer Climate Control",
+        data={**HUB_DATA, CONF_SURPLUS_ENTITY: ENERGY_SIGNAL},
+        subentries_data=[
+            ConfigSubentryData(
+                data=ROOM_DATA,
+                subentry_type=SUBENTRY_TYPE_ROOM,
+                title="Wohnzimmer",
+                unique_id=None,
+            )
+        ],
+    )
+    mock_entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(mock_entry.entry_id)
+    await hass.async_block_till_done()
+    coordinator = mock_entry.runtime_data
+    await coordinator.async_set_mode(Mode.HEATING)
+    await hass.async_block_till_done()
+
+    assert coordinator.data.energy is EnergyLevel.FORCED
+    assert coordinator.data.rooms[0].target_temperature == 22.0
+    state = hass.states.get("sensor.schworer_climate_control_decision")
+    assert state.attributes["energy"] == "forced"
+
+    hass.states.async_set(ENERGY_SIGNAL, "blocked")
+    await coordinator.async_refresh()
+    assert coordinator.data.energy is EnergyLevel.BLOCKED
+    assert coordinator.data.rooms[0].target_temperature == 19.0
+
+    hass.states.async_set(ENERGY_SIGNAL, "unavailable")
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+    assert coordinator.data.energy is EnergyLevel.NORMAL
+    assert coordinator.data.rooms[0].target_temperature == 20.0
+    missing = hass.states.get("binary_sensor.schworer_climate_control_inputs_missing")
+    assert missing.state == "on"
+    assert "surplus" in missing.attributes["failed_inputs"]

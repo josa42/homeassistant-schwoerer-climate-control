@@ -12,14 +12,17 @@ from custom_components.schwoerer_climate_control.const import (
     AUX_DWELL,
     AUX_PROGRESS_WINDOW,
     CONF_AUX_HEAT_OFF_AT_NIGHT,
+    CONF_BLOCKED_TARGET_DROP,
     CONF_CO2_HIGH,
     CONF_FAN_AIR_QUALITY,
     CONF_FAN_QUIET_MAX,
+    CONF_FORCED_TARGET_BOOST,
     CONF_FROST_PROTECTION_BELOW,
     CONF_HUMIDITY_HIGH,
     CONF_TARGET_NORMAL,
     TARGET_MAX,
     ActuatorKind,
+    EnergyLevel,
     FanMode,
     FanReason,
     HeatingCoolingFunction,
@@ -970,6 +973,233 @@ def test_surplus_is_not_stored_in_a_room_with_an_open_window() -> None:
 
 def test_no_surplus_entity_means_no_boost() -> None:
     assert run()[0].rooms[0].target_temperature == 20.0
+
+
+@pytest.mark.parametrize(
+    ("state", "level", "target", "reason"),
+    [
+        ("blocked", EnergyLevel.BLOCKED, 19.0, RoomReason.ENERGY_BLOCKED),
+        ("normal", EnergyLevel.NORMAL, 20.0, RoomReason.NORMAL),
+        ("recommended", EnergyLevel.RECOMMENDED, 21.0, RoomReason.SURPLUS),
+        ("forced", EnergyLevel.FORCED, 22.0, RoomReason.SURPLUS_FORCED),
+    ],
+)
+def test_a_stated_energy_level_is_taken_at_its_word(
+    state: str, level: EnergyLevel, target: float, reason: RoomReason
+) -> None:
+    # An energy manager has already decided, with its own dwell and hysteresis.
+    decision, _ = run(given(surplus=read(state)))
+    assert decision.energy is level
+    assert decision.rooms[0].target_temperature == target
+    assert decision.rooms[0].reason is reason
+    assert decision.degraded == ()
+
+
+def test_an_unreadable_energy_signal_counts_as_normal_and_is_named() -> None:
+    decision, _ = run(given(surplus=Reading()))
+    assert decision.energy is EnergyLevel.NORMAL
+    assert decision.rooms[0].target_temperature == 20.0
+    assert "surplus" in decision.degraded
+
+
+def test_an_unknown_energy_state_counts_as_normal_and_is_named() -> None:
+    decision, _ = run(given(surplus=read("maybe")))
+    assert decision.energy is EnergyLevel.NORMAL
+    assert "surplus" in decision.degraded
+
+
+def test_a_boolean_surplus_is_recommended() -> None:
+    assert run(given(surplus=read("on")))[0].energy is EnergyLevel.RECOMMENDED
+    assert run(given(surplus=read("off")))[0].energy is EnergyLevel.NORMAL
+
+
+def test_a_large_numeric_surplus_becomes_forced_once_it_held() -> None:
+    inputs = given(surplus=read(3000.0))
+    first, state = run(inputs)
+    assert first.energy is EnergyLevel.NORMAL, "neither has held yet"
+    assert state.forced_since == NOON
+
+    later = replace(inputs, now=NOON + timedelta(minutes=25))
+    decision, _ = run(later, state=state)
+    assert decision.energy is EnergyLevel.FORCED
+    assert decision.rooms[0].target_temperature == 22.0
+
+
+def test_a_surplus_short_of_forced_stays_recommended() -> None:
+    inputs = given(surplus=read(2000.0))
+    _, state = run(inputs)
+    assert state.forced_since is None
+    decision, _ = run(replace(inputs, now=NOON + timedelta(minutes=25)), state=state)
+    assert decision.energy is EnergyLevel.RECOMMENDED
+
+
+def test_forced_falls_back_by_the_same_band_as_the_start() -> None:
+    # 2500 starts it, and with the start and the stop 700 W apart it holds down
+    # to 1800, so that spending it does not withdraw the reason at once.
+    since = NOON - timedelta(minutes=30)
+    state = EngineState(surplus_since=since, forced_since=since)
+    decision, state = run(given(surplus=read(1900.0)), state=state)
+    assert decision.energy is EnergyLevel.FORCED
+    assert state.forced_since == since
+
+    decision, state = run(given(surplus=read(1700.0)), state=state)
+    assert decision.energy is EnergyLevel.RECOMMENDED
+    assert state.forced_since is None
+
+
+def test_the_energy_level_is_named_in_the_system_decision() -> None:
+    decision, _ = run(given(surplus=read("forced")))
+    assert "energy forced" in decision.message
+    assert decision.as_attributes()["energy"] == "forced"
+    assert run()[0].as_attributes()["energy"] == "normal"
+    assert "energy" not in run()[0].message
+
+
+def test_a_change_of_energy_level_is_a_change() -> None:
+    normal, _ = run()
+    blocked, _ = run(given(surplus=read("blocked")))
+    assert normal.signature != blocked.signature
+
+
+@pytest.mark.parametrize("state", ["blocked", "forced"])
+def test_the_energy_level_spares_rooms_on_holiday_or_with_a_window_open(state: str) -> None:
+    open_room = a_room(contacts=(read(True),))
+    assert run(given(surplus=read(state), rooms=(open_room,)))[0].rooms[0].target_temperature == 12.0
+    on_holiday = run(given(surplus=read(state)), holiday=True)[0].rooms[0]
+    assert on_holiday.target_temperature == 18.0
+
+
+def test_the_energy_level_does_not_move_the_setpoint_while_ventilating() -> None:
+    for state in ("blocked", "recommended", "forced"):
+        decision, _ = run(given(surplus=read(state)), mode=Mode.VENTILATION)
+        assert decision.rooms[0].target_temperature == 20.0, state
+
+
+def test_the_energy_settings_come_from_the_hub() -> None:
+    hub = {
+        CONF_BLOCKED_TARGET_DROP: 2.0,
+        CONF_FORCED_TARGET_BOOST: 3.0,
+    }
+    assert run(given(surplus=read("blocked")), hub)[0].rooms[0].target_temperature == 18.0
+    assert run(given(surplus=read("forced")), hub)[0].rooms[0].target_temperature == 23.0
+
+
+################################################################################
+# Saving energy
+
+
+def test_saving_keeps_every_auxiliary_heater_off() -> None:
+    inputs = given(surplus=read("blocked"), rooms=(a_cold_room(temperature=read(16.0)),))
+    decision, _ = run(inputs, state=waited("wohnzimmer"))
+    room = decision.rooms[0]
+    assert room.auxiliary_heat is False
+    assert room.gate_passed("aux_energy_allows") is False
+    assert decision.auxiliary_heat_house is False
+
+
+def test_saving_stops_a_running_auxiliary_heater() -> None:
+    room = a_cold_room(temperature=read(16.0), auxiliary_enabled=read(True))
+    decision, _ = run(given(surplus=read("blocked"), rooms=(room,)))
+    assert decision.rooms[0].auxiliary_heat is False
+
+
+def test_saving_leaves_the_heat_pump_released() -> None:
+    # It is the efficient heat in the house, and frost protection rests on it.
+    decision, _ = run(given(surplus=read("blocked")))
+    assert decision.heat_release is True
+
+
+def test_saving_holds_cooling_back() -> None:
+    decision, _ = run(warm_house(surplus=read("blocked")), mode=Mode.COOLING)
+    assert decision.cool_release is False
+    assert decision.reason is Reason.COOL_NO_SURPLUS
+    surplus = next(gate for gate in decision.gates if gate.name == "surplus")
+    assert surplus.detail == "blocked, stated by the signal"
+
+
+def test_a_boost_beats_saving() -> None:
+    inputs = given(surplus=read("blocked"), rooms=(a_cold_room(boost=True),))
+    decision, _ = run(inputs)
+    assert decision.rooms[0].auxiliary_heat is True
+    assert decision.rooms[0].target_temperature == TARGET_MAX
+    assert decision.auxiliary_heat_house is True
+
+
+################################################################################
+# Plenty to spare
+
+
+def test_plenty_of_surplus_runs_the_heater_whatever_the_weather() -> None:
+    # Warm outside, so neither the heat pump nor the heater would be released
+    # otherwise. The room is short of its raised target of 22.
+    inputs = given(outdoor=read(18.0), surplus=read("forced"), rooms=(a_cold_room(temperature=read(20.0)),))
+    decision, _ = run(inputs, state=waited("wohnzimmer"))
+    room = decision.rooms[0]
+    assert decision.heat_release is False
+    assert room.auxiliary_heat is True
+    assert room.gate_passed("aux_outdoor_cold") is False
+    assert room.gate_passed("aux_surplus_forced") is True
+    assert "plenty of surplus" in room.message
+    assert decision.auxiliary_heat_house is True
+
+
+def test_plenty_of_surplus_runs_the_heater_at_night() -> None:
+    inputs = given(now=NIGHT, surplus=read("forced"), rooms=(a_cold_room(),))
+    hub = {CONF_AUX_HEAT_OFF_AT_NIGHT: True}
+    decision, _ = run(inputs, hub, state=waited("wohnzimmer", now=NIGHT), aux_at_night=False)
+    assert decision.rooms[0].auxiliary_heat is True
+    assert decision.rooms[0].gate_passed("aux_allowed_now") is True, "the record agrees"
+
+
+def test_plenty_of_surplus_does_not_ask_the_supply_air() -> None:
+    # Supply air well above the room would normally leave it to the heat pump.
+    inputs = given(
+        surplus=read("forced"),
+        supply_air=read(40.0),
+        heat_release=read(True),
+        rooms=(a_cold_room(temperature=read(21.0)),),
+    )
+    decision, _ = run(inputs, state=waited("wohnzimmer"))
+    assert decision.rooms[0].auxiliary_heat is True
+
+
+def test_plenty_of_surplus_still_waits_out_the_dwell() -> None:
+    inputs = given(outdoor=read(18.0), surplus=read("forced"), rooms=(a_cold_room(temperature=read(20.0)),))
+    decision, state = run(inputs)
+    assert decision.rooms[0].auxiliary_heat is False
+    assert "wohnzimmer" in state.aux_needed_since
+
+
+def test_plenty_of_surplus_leaves_a_room_at_its_target_alone() -> None:
+    inputs = given(outdoor=read(18.0), surplus=read("forced"), rooms=(a_cold_room(temperature=read(21.8)),))
+    decision, _ = run(inputs, state=waited("wohnzimmer"))
+    assert decision.rooms[0].auxiliary_heat is False
+
+
+def test_plenty_of_surplus_does_not_heat_out_of_an_open_window() -> None:
+    room = a_cold_room(contacts=(read(True),))
+    decision, _ = run(given(surplus=read("forced"), rooms=(room,)), state=waited("wohnzimmer"))
+    assert decision.rooms[0].auxiliary_heat is False
+
+
+@pytest.mark.parametrize("mode", [Mode.VENTILATION, Mode.COOLING])
+def test_plenty_of_surplus_only_heats_in_heating(mode: Mode) -> None:
+    inputs = given(outdoor=read(18.0), surplus=read("forced"), rooms=(a_cold_room(temperature=read(15.0)),))
+    decision, _ = run(inputs, state=waited("wohnzimmer"), mode=mode)
+    assert decision.rooms[0].auxiliary_heat is False
+
+
+def test_plenty_of_surplus_cools_further() -> None:
+    decision, _ = run(warm_house(surplus=read("forced")), mode=Mode.COOLING)
+    assert decision.cool_release is True
+    room = decision.rooms[0]
+    assert room.target_temperature == 23.0
+    assert room.reason is RoomReason.SURPLUS_FORCED
+
+
+def test_plenty_of_surplus_does_not_cool_further_on_holiday() -> None:
+    decision, _ = run(warm_house(surplus=read("forced")), mode=Mode.COOLING, holiday=True)
+    assert decision.rooms[0].target_temperature == 26.0
 
 
 ################################################################################

@@ -36,6 +36,7 @@ from .const import (
     CONF_AUX_HEAT_OFF_AT_NIGHT,
     CONF_AUX_HOUSE_SWITCH,
     CONF_AUX_SUPPLY_MARGIN,
+    CONF_BLOCKED_TARGET_DROP,
     CONF_BYPASS_SENSOR,
     CONF_CLIMATE_ENTITY,
     CONF_CO2_HIGH,
@@ -57,6 +58,8 @@ from .const import (
     CONF_FAN_OFF_ABOVE,
     CONF_FAN_QUIET_MAX,
     CONF_FAN_SELECT,
+    CONF_FORCED_COOL_DROP,
+    CONF_FORCED_TARGET_BOOST,
     CONF_FORECAST_BLOCKS_ABOVE,
     CONF_FORECAST_ENTITY,
     CONF_FROST_PROTECTION_BELOW,
@@ -78,6 +81,7 @@ from .const import (
     CONF_SUPPLY_AIR_SENSOR,
     CONF_SUPPLY_TEMPERATURE_SENSOR,
     CONF_SURPLUS_ENTITY,
+    CONF_SURPLUS_FORCED,
     CONF_SURPLUS_START,
     CONF_SURPLUS_STOP,
     CONF_SURPLUS_TARGET_BOOST,
@@ -174,7 +178,7 @@ def unit_schema(values: Mapping[str, Any]) -> vol.Schema:
         schema,
         CONF_SURPLUS_ENTITY,
         values,
-        _entity(["binary_sensor", "input_boolean", "sensor"]),
+        _entity(["binary_sensor", "input_boolean", "input_select", "select", "sensor"]),
     )
     _optional(schema, CONF_POWER_SENSOR, values, _entity("sensor", device_class="power"))
     _optional(schema, CONF_NOTIFY_SERVICE, values, _entity("notify"))
@@ -269,7 +273,13 @@ def thresholds_schema(values: Mapping[str, Any]) -> vol.Schema:
         CONF_SURPLUS_STOP: selector.NumberSelector(
             selector.NumberSelectorConfig(min=0, max=15000, step=50)
         ),
+        CONF_SURPLUS_FORCED: selector.NumberSelector(
+            selector.NumberSelectorConfig(min=0, max=30000, step=50)
+        ),
         CONF_SURPLUS_TARGET_BOOST: _temperature(0, 5),
+        CONF_FORCED_TARGET_BOOST: _kelvin(0, 5),
+        CONF_FORCED_COOL_DROP: _kelvin(0, 5),
+        CONF_BLOCKED_TARGET_DROP: _kelvin(0, 5),
         CONF_HEAT_CAP_ABOVE: _temperature(0, 20),
         CONF_FAN_HEAT_CAP: _stage(),
         CONF_FAN_OFF_ABOVE: _temperature(0, 30),
