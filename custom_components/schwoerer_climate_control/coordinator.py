@@ -179,6 +179,8 @@ class ClimateControlCoordinator(DataUpdateCoordinator[SystemDecision]):
         # started from. Empty until the entities have restored.
         self.hub_settings: dict[str, Any] = {}
         self.room_settings: dict[str, dict[str, Any]] = {}
+        # The rooms someone has asked to heat at full, by room id.
+        self.room_boost: set[str] = set()
 
         self.engine_state = EngineState()
         # Where the recorder last saw each room, offered to the engine until it
@@ -286,6 +288,13 @@ class ClimateControlCoordinator(DataUpdateCoordinator[SystemDecision]):
 
     async def async_set_aux_at_night(self, aux_at_night: bool) -> None:
         self.aux_at_night = aux_at_night
+        self._act_now()
+
+    async def async_set_room_boost(self, room_id: str, boost: bool) -> None:
+        if boost:
+            self.room_boost.add(room_id)
+        else:
+            self.room_boost.discard(room_id)
         self._act_now()
 
     async def async_set_hub_setting(
@@ -570,6 +579,7 @@ class ClimateControlCoordinator(DataUpdateCoordinator[SystemDecision]):
                 co2=self._number(room.config.get(CONF_CO2_SENSOR)),
                 actuator=room.actuator,
                 auxiliary_enabled=self._auxiliary_enabled(room),
+                boost=room.room_id in self.room_boost,
             )
             for room in self.rooms.values()
         )

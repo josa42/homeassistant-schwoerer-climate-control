@@ -10,8 +10,13 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
-from .coordinator import ClimateControlConfigEntry, ClimateControlCoordinator
-from .entity import HubEntity
+from .const import SUBENTRY_TYPE_ROOM
+from .coordinator import (
+    ClimateControlConfigEntry,
+    ClimateControlCoordinator,
+    RoomRuntime,
+)
+from .entity import HubEntity, RoomEntity
 
 
 async def async_setup_entry(
@@ -29,6 +34,15 @@ async def async_setup_entry(
             DryRunSwitch(coordinator),
         ]
     )
+    for subentry_id, subentry in entry.subentries.items():
+        if subentry.subentry_type != SUBENTRY_TYPE_ROOM:
+            continue
+        room = coordinator.rooms.get(subentry_id)
+        if room is None:
+            continue
+        async_add_entities(
+            [BoostSwitch(coordinator, room)], config_subentry_id=subentry_id
+        )
 
 
 class ActiveSwitch(HubEntity, SwitchEntity, RestoreEntity):
@@ -162,4 +176,35 @@ class DryRunSwitch(HubEntity, SwitchEntity, RestoreEntity):
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         await self.coordinator.async_set_dry_run(False)
+        self.async_write_ha_state()
+
+
+class BoostSwitch(RoomEntity, SwitchEntity, RestoreEntity):
+    """Heat this room at full until it is switched off again.
+
+    The setpoint goes to the maximum and the room's heater runs, whatever the
+    mode, the window or the time of day say. When to boost is decided outside,
+    by an automation: a towel rail in the bathroom after a shower, say.
+    """
+
+    def __init__(self, coordinator: ClimateControlCoordinator, room: RoomRuntime) -> None:
+        super().__init__(coordinator, room, "boost")
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        if (last := await self.async_get_last_state()) is not None:
+            await self.coordinator.async_set_room_boost(
+                self._room_id, last.state == STATE_ON
+            )
+
+    @property
+    def is_on(self) -> bool:
+        return self._room_id in self.coordinator.room_boost
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        await self.coordinator.async_set_room_boost(self._room_id, True)
+        self.async_write_ha_state()
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        await self.coordinator.async_set_room_boost(self._room_id, False)
         self.async_write_ha_state()

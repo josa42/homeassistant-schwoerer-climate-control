@@ -238,6 +238,9 @@
       "aux_heat_at_night": {
         "name": "Auxiliary heaters at night"
       },
+      "boost": {
+        "name": "Boost"
+      },
       "dry_run": {
         "name": "Dry run"
       }
@@ -280,6 +283,7 @@
           "holiday": "Holiday",
           "night": "Night",
           "normal": "Normal",
+          "boost": "Boost",
           "idle": "Idle"
         }
       },

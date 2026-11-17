@@ -21,6 +21,7 @@ from custom_components.schwoerer_climate_control.const import (
     STUCK_AFTER,
     SUBENTRY_TYPE_ROOM,
     Mode,
+    RoomReason,
 )
 from custom_components.schwoerer_climate_control.engine import EngineState
 
@@ -239,6 +240,7 @@ async def test_the_entities_appear(hass: HomeAssistant, entry, unit, setup_entry
         "select.schworer_climate_control_fan_level_at_night",
         "number.wohnzimmer_target_temperature",
         "number.wohnzimmer_target_temperature_at_night",
+        "switch.wohnzimmer_boost",
         "sensor.schworer_climate_control_decision",
         "binary_sensor.schworer_climate_control_inputs_missing",
         "sensor.wohnzimmer_decision",
@@ -647,6 +649,28 @@ async def test_a_setpoint_entity_drives_the_room(
 
     assert coordinator.data.rooms[0].target_temperature == 21.5
     assert coordinator.data.rooms[0].settings["target_normal"]["source"] == "room"
+
+
+async def test_the_boost_switch_drives_the_room(
+    hass: HomeAssistant, entry, unit, setup_entry
+) -> None:
+    # Not through start, whose recorder would take the switch service too.
+    unit()
+    await setup_entry(entry)
+    coordinator = entry.runtime_data
+
+    await hass.services.async_call(
+        "switch", "turn_on", {"entity_id": "switch.wohnzimmer_boost"}, blocking=True
+    )
+    await hass.async_block_till_done()
+    assert coordinator.data.rooms[0].reason is RoomReason.BOOST
+    assert coordinator.data.rooms[0].auxiliary_heat is True
+
+    await hass.services.async_call(
+        "switch", "turn_off", {"entity_id": "switch.wohnzimmer_boost"}, blocking=True
+    )
+    await hass.async_block_till_done()
+    assert coordinator.data.rooms[0].reason is not RoomReason.BOOST
 
 
 async def test_a_restart_carries_on_with_the_heaters_dwell(start_with_history) -> None:

@@ -269,7 +269,7 @@ reaches the unit.
 | Device | Entities |
 | --- | --- |
 | Central | Active, holiday, night setback, auxiliary heaters at night and dry run switches, mode, fan and fan-level-at-night selects, decision sensor, inputs-missing indicator, heat recovery sensor |
-| Each room | Target temperature and target temperature at night, decision sensor |
+| Each room | Target temperature and target temperature at night, boost switch, decision sensor |
 
 **Night setback** off keeps every room at its day setpoint at night. The night
 still counts for the rest, so the fan runs its night stage either way, which
@@ -278,6 +278,16 @@ still counts for the rest, so the fan runs its night stage either way, which
 **Auxiliary heaters at night** off keeps every room's auxiliary heater off at
 night, whatever the room's own setting says. On, each room decides for itself
 with *No auxiliary heat at night*.
+
+**Boost** heats one room at full until it is switched off again: the setpoint
+goes to 30 °C and the room's heater runs at once. For a room of the unit that is
+its auxiliary heater, and the house-wide release follows. Nothing else gets a
+say, not the mode, an open window, the outdoor temperature, the night or the
+15 minutes a heater normally waits, because whoever switched it on has already
+decided. When to boost is left to an automation of your own, the towel rail in
+the bathroom after a shower for example, and so is switching it off. Off, the
+room goes back to its usual decision, and a heater that is still wanted keeps
+running from where the boost left it.
 
 **Active** off means no register is written at all. The unit keeps running on its
 last values and the decision sensors keep showing what the controller would do,

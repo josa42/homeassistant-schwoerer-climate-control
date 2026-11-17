@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Boost**, a switch on each room. On, the room heats at full: its setpoint
+  goes to 30 °C and its heater runs at once, whatever the mode, the window, the
+  outdoor temperature or the night say. Meant for an automation that decides
+  when, such as a towel rail in the bathroom.
+
 ## 1.8.0 - 2026-11-05
 
 ### Added

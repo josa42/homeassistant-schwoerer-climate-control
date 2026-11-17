@@ -18,6 +18,7 @@ from custom_components.schwoerer_climate_control.const import (
     CONF_FROST_PROTECTION_BELOW,
     CONF_HUMIDITY_HIGH,
     CONF_TARGET_NORMAL,
+    TARGET_MAX,
     ActuatorKind,
     FanMode,
     FanReason,
@@ -561,6 +562,47 @@ def test_the_house_release_is_left_alone_while_switched_off() -> None:
 def test_a_wgt_room_has_no_separate_on_and_off() -> None:
     # Its hvac mode is the auxiliary heater, so there is nothing else to say.
     assert run()[0].rooms[0].heating_enabled is None
+
+
+################################################################################
+# The boost
+
+
+def test_a_boosted_room_heats_at_full_at_once() -> None:
+    decision, _ = run(given(rooms=(a_cold_room(boost=True),)))
+    room = decision.rooms[0]
+    assert room.target_temperature == TARGET_MAX
+    assert room.intent is RoomIntent.BOOST
+    assert room.reason is RoomReason.BOOST
+    assert room.auxiliary_heat is True, "no dwell, whoever asked has decided"
+    assert room.auxiliary_heat_waiting_since is None
+    assert decision.auxiliary_heat_house is True
+    assert room.message.startswith("Boost, target 30.0 °C")
+
+
+def test_a_boost_overrules_the_mode_the_window_and_the_night() -> None:
+    room = a_room(contacts=(read(True),), auxiliary_enabled=read(False), boost=True)
+    inputs = given(now=NIGHT, outdoor=read(25.0), rooms=(room,))
+    room_hub = {CONF_AUX_HEAT_OFF_AT_NIGHT: True}
+    decision, _ = run(inputs, room_hub, mode=Mode.VENTILATION, aux_at_night=False)
+    assert decision.rooms[0].auxiliary_heat is True
+    assert decision.rooms[0].target_temperature == TARGET_MAX
+    assert decision.auxiliary_heat_house is True
+
+
+def test_a_boost_ended_leaves_the_room_to_its_usual_decision() -> None:
+    decision, state = run(given(rooms=(a_cold_room(boost=True),)))
+    assert state.aux_needed_since == {}
+    decision, _ = run(given(rooms=(a_cold_room(),)), state=state)
+    assert decision.rooms[0].reason is RoomReason.NORMAL
+    assert decision.rooms[0].auxiliary_heat is False, "the dwell starts over"
+
+
+def test_a_boosted_foreign_heater_runs_while_ventilating() -> None:
+    room = a_room("bad", actuator=ActuatorKind.GENERIC, boost=True)
+    decision, _ = run(given(rooms=(room,)), mode=Mode.VENTILATION)
+    assert decision.rooms[0].heating_enabled is True
+    assert decision.rooms[0].target_temperature == TARGET_MAX
 
 
 ################################################################################
