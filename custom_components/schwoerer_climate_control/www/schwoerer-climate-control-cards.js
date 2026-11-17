@@ -68,6 +68,8 @@ const WORDS = {
     energyToday: "Heute",
     energyWeek: "7 Tage",
     energyLastYear: "Vorjahr",
+    energySignal: "Energie-Signal",
+    energyLevel: { blocked: "Sparen", normal: "Normal", recommended: "Überschuss", forced: "Viel Überschuss" },
     perDay: (v) => `Ø ${v}/Tag`,
     noData: "keine Daten",
     noPower: "Wähle unter Einstellungen → Entitäten die Leistung der Anlage, dann steht hier ihr Verbrauch.",
@@ -253,6 +255,8 @@ const WORDS = {
     energyToday: "Today",
     energyWeek: "7 days",
     energyLastYear: "Last year",
+    energySignal: "Energy signal",
+    energyLevel: { blocked: "Saving", normal: "Normal", recommended: "Surplus", forced: "Plenty of surplus" },
     perDay: (v) => `avg ${v}/day`,
     noData: "no data",
     noPower: "Pick the power of the unit under Settings → Entities, and its consumption shows here.",
@@ -402,6 +406,7 @@ const OUTLOOK = {
     cool_release_on: ["Kühlen beginnt", (t) => `ab ${t.limit} im wärmsten Raum, jetzt ${t.value}`],
     cool_release_off: ["Kühlen endet", (t) => `unter ${t.limit} im wärmsten Raum, jetzt ${t.value}`],
     surplus_on: ["PV-Überschuss reicht", (t) => `ab ${t.limit}, jetzt ${t.value}`],
+    surplus_forced: ["Viel Überschuss", (t) => `ab ${t.limit}, jetzt ${t.value}`],
     aux_wanted: ["Zuheizer gewünscht", (t) => `ab ${t.limit} im Raum, jetzt ${t.value}`],
     aux_override: ["Zuluft zählt nicht mehr", (t) => `ab ${t.limit} im Raum, dann wartet der Zuheizer nur noch 15 min`],
     aux_supply: ["Zuluft reicht nicht", (t) => `unter ${t.limit} wärmer als der Raum, jetzt ${t.value}`],
@@ -425,6 +430,7 @@ const OUTLOOK = {
     cool_release_on: ["Cooling starts", (t) => `from ${t.limit} in the warmest room, now ${t.value}`],
     cool_release_off: ["Cooling ends", (t) => `below ${t.limit} in the warmest room, now ${t.value}`],
     surplus_on: ["Enough PV surplus", (t) => `from ${t.limit}, now ${t.value}`],
+    surplus_forced: ["Plenty of surplus", (t) => `from ${t.limit}, now ${t.value}`],
     aux_wanted: ["Aux heater wanted", (t) => `from ${t.limit} in the room, now ${t.value}`],
     aux_override: ["Supply air stops counting", (t) => `from ${t.limit} in the room, then the heater only waits 15 min`],
     aux_supply: ["Supply air not enough", (t) => `below ${t.limit} above the room, now ${t.value}`],
@@ -1058,6 +1064,7 @@ const SENTENCES = {
       stalled: () => "Mit der Zuluft allein holt der Raum nicht auf",
       plain: (v) => `${v.deficit} unter Soll`,
       boost: () => "Boost, bis er ausgeschaltet wird",
+      forced: (v) => `${v.deficit} unter Soll, und es ist viel Strom übrig`,
     },
     auxWaiting: (v) => `Wartet noch ${v.left}, dann an`,
     auxWatching: (v) => `Zuluft ${v.lift} wärmer als der Raum, die Wärmepumpe soll es schaffen. Raum wird beobachtet: ${v.rise} von ${v.need} gestiegen.`,
@@ -1070,6 +1077,7 @@ const SENTENCES = {
       window: "Fenster offen.",
       night: "Nachts in diesem Raum aus.",
       temperature: "Keine Raumtemperatur.",
+      energy: "Das Energie-Signal sagt sparen.",
     },
     ownHeater: "eigene Heizung",
     ownHeaterOn: "darf heizen",
@@ -1111,6 +1119,7 @@ const SENTENCES = {
       stalled: () => "The room does not catch up on supply air alone",
       plain: (v) => `${v.deficit} below target`,
       boost: () => "Boost, until it is switched off",
+      forced: (v) => `${v.deficit} below target, with plenty of surplus`,
     },
     auxWaiting: (v) => `Waiting another ${v.left}, then on`,
     auxWatching: (v) => `Supply air ${v.lift} above the room, the heat pump should manage. Watching the room: risen ${v.rise} of ${v.need}.`,
@@ -1123,6 +1132,7 @@ const SENTENCES = {
       window: "Window open.",
       night: "Off at night in this room.",
       temperature: "No room temperature.",
+      energy: "The energy signal says to save.",
     },
     ownHeater: "own heater",
     ownHeaterOn: "may heat",
@@ -1174,19 +1184,23 @@ function auxStatus(hass, hub, room) {
   const outdoorGate = gate(room.state, "aux_outdoor_cold");
   const nightGate = gate(room.state, "aux_allowed_now");
   const hubAttrs = attrs(hub);
+  // With plenty of surplus the release, the outdoor limit and the night do not apply.
+  const forced = hubAttrs.energy === "forced";
   let locked = null;
   if (hubAttrs.mode !== "heating") locked = s.auxLocked.mode;
-  else if (!hubAttrs.heat_release) locked = s.auxLocked.release;
-  else if (outdoorGate && !outdoorGate.passed && thr.aux_outdoor)
+  else if (hubAttrs.energy === "blocked") locked = s.auxLocked.energy;
+  else if (!forced && !hubAttrs.heat_release) locked = s.auxLocked.release;
+  else if (!forced && outdoorGate && !outdoorGate.passed && thr.aux_outdoor)
     locked = s.auxLocked.outdoor({ outdoor: deg(hass, thr.aux_outdoor.value), limit: deg(hass, thr.aux_outdoor.limit) });
   else if (a.window_open) locked = s.auxLocked.window;
-  else if (nightGate && !nightGate.passed) locked = s.auxLocked.night;
+  else if (!forced && nightGate && !nightGate.passed) locked = s.auxLocked.night;
   else if (temperature === null) locked = s.auxLocked.temperature;
 
   const deficit = target !== null && temperature !== null ? target - temperature : null;
   if (a.auxiliary_heat) {
     let why = s.auxRunningWhy.plain({ deficit: kelvin(hass, deficit) });
     if (a.reason_code === "boost") why = s.auxRunningWhy.boost();
+    else if (gate(room.state, "aux_surplus_forced")?.passed) why = s.auxRunningWhy.forced({ deficit: kelvin(hass, deficit) });
     else if (gate(room.state, "aux_override")?.passed) why = s.auxRunningWhy.override({ deficit: kelvin(hass, deficit) });
     else if (gate(room.state, "aux_not_catching_up")?.passed) why = s.auxRunningWhy.stalled();
     else if (gate(room.state, "aux_supply_insufficient")?.passed && thr.aux_supply) why = s.auxRunningWhy.supply({ lift: kelvin(hass, thr.aux_supply.value) });
@@ -1359,8 +1373,12 @@ class EnergyCard extends SccCard {
     if (!m.hub) return null;
     const w = words(hass);
     const power = source(hass, m.hub, "power");
+    const level = attrs(m.hub).energy;
+    const signal = source(hass, m.hub, "surplus") && level
+      ? `<p class="small muted">${esc(w.energySignal)}: <b>${esc(w.energyLevel[level] || level)}</b></p>`
+      : "";
     if (!power) {
-      return `<span class="eyebrow">${esc(w.energy)}</span><p class="empty">${esc(w.noPower)}</p>`;
+      return `<span class="eyebrow">${esc(w.energy)}</span>${signal}<p class="empty">${esc(w.noPower)}</p>`;
     }
     const data = this._data;
     const kwh = (rows, hoursEach) => rows.reduce((sum, row) => sum + (row.mean || 0) * hoursEach, 0) / 1000;
@@ -1390,7 +1408,7 @@ class EnergyCard extends SccCard {
     const middle = perDay[Math.floor(perDay.length / 2)];
     const last = perDay[perDay.length - 1];
 
-    return `<span class="eyebrow">${esc(w.energy)}</span>
+    return `<span class="eyebrow">${esc(w.energy)}</span>${signal}
       <div class="grid" style="--min:110px">
         ${tile(w.energyNow, withUnit(hass, numberOf(power), "W"))}
         ${tile(w.energyToday, today === null ? w.loading : withUnit(hass, today, "kWh"))}
@@ -1543,16 +1561,20 @@ class AuxCard extends SccCard {
     const thr = thresholdsOf(m.hub);
 
     const gates = [];
-    gates.push([a.mode === "heating" && !!a.heat_release, w.heatPump, a.heat_release ? `${w.heat} ${w.free}` : w.locked, ""]);
+    const forced = a.energy === "forced";
+    if (a.energy && a.energy !== "normal") {
+      gates.push([a.energy !== "blocked", w.energySignal, w.energyLevel[a.energy] || a.energy, ""]);
+    }
+    gates.push([forced || (a.mode === "heating" && !!a.heat_release), w.heatPump, a.heat_release ? `${w.heat} ${w.free}` : w.locked, ""]);
     if (thr.aux_outdoor) {
       const t = thr.aux_outdoor;
-      const ok = t.distance > 0;
+      const ok = forced || t.distance > 0;
       gates.push([ok, w.outdoorCold, w.belowLimit(deg(hass, t.value), deg(hass, t.limit)), ok ? w.lockedFrom(deg(hass, t.limit), kelvin(hass, t.distance)) : ""]);
     }
     const open = m.rooms.filter((room) => attrs(room.state).window_open);
     gates.push([!open.length, w.windows, open.length ? open.map((r) => r.name).join(", ") : w.allClosed, ""]);
     const nightOff = m.rooms.filter((room) => gate(room.state, "aux_allowed_now"));
-    gates.push([!(a.is_night && nightOff.length), w.nightGate, nightOff.length ? w.offAtNight(nightOff.map((r) => r.name).join(", ")) : w.noneOffAtNight, ""]);
+    gates.push([forced || !(a.is_night && nightOff.length), w.nightGate, nightOff.length ? w.offAtNight(nightOff.map((r) => r.name).join(", ")) : w.noneOffAtNight, ""]);
 
     const gateHtml = gates.map(([ok, title, now, near]) => `<div class="tile"><span class="row" style="gap:8px;font-size:14px;font-weight:500"><span class="${ok ? "blue" : "orange"}" style="font-weight:700">${ok ? "✓" : "–"}</span>${esc(title)}</span><span class="small" style="color:var(--scc-text)">${esc(now)}</span>${near ? `<span class="small muted">${esc(near)}</span>` : ""}</div>`).join("");
 
@@ -1598,6 +1620,7 @@ const DIAGNOSIS = {
     setpointNight: (v) => `Ja, gerade gilt die Nachtabsenkung: ${v.night} bis ${v.end}.`,
     setpointHoliday: (v) => `Ja, Urlaub: ${v.target}.`,
     setpointShort: "Gerade gilt ein abgesenkter Sollwert.",
+    setpointSaving: (v) => `Ja, das Energie-Signal sagt sparen: um ${v.drop} gesenkt auf ${v.target}.`,
     nightQ: "Wirkt die Nacht nach?",
     nightYes: (v) => `Ja. Von ${v.start} bis ${v.end} fiel der Raum von ${v.from} auf ${v.to}.`,
     nightNo: (v) => `Nein, nach der Nacht lag der Raum bei ${v.to}.`,
@@ -1635,6 +1658,7 @@ const DIAGNOSIS = {
     boostYes: (v) => `Ja, PV-Überschuss hebt ihn um ${v.boost} an.`,
     boostNo: (v) => `Nein, ${v.target}.`,
     boostShort: "Der Sollwert ist wegen PV-Überschuss angehoben.",
+    boostPlenty: (v) => `Ja, es ist viel Strom übrig: um ${v.boost} angehoben.`,
     heatingQ: "Heizt die Wärmepumpe?",
     heatingYes: (v) => `Ja. Die Zuluft geht mit ${v.supply} in jeden Raum, auch in die, die schon warm genug sind.`,
     heatingNo: "Nein.",
@@ -1715,6 +1739,7 @@ const DIAGNOSIS = {
     setpointNight: (v) => `Yes, the night setback applies: ${v.night} until ${v.end}.`,
     setpointHoliday: (v) => `Yes, holiday: ${v.target}.`,
     setpointShort: "A lowered target applies right now.",
+    setpointSaving: (v) => `Yes, the energy signal says to save: lowered by ${v.drop} to ${v.target}.`,
     nightQ: "Is the night still showing?",
     nightYes: (v) => `Yes. From ${v.start} to ${v.end} the room fell from ${v.from} to ${v.to}.`,
     nightNo: (v) => `No, after the night the room was at ${v.to}.`,
@@ -1752,6 +1777,7 @@ const DIAGNOSIS = {
     boostYes: (v) => `Yes, PV surplus raises it by ${v.boost}.`,
     boostNo: (v) => `No, ${v.target}.`,
     boostShort: "The target is raised for PV surplus.",
+    boostPlenty: (v) => `Yes, there is plenty of surplus: raised by ${v.boost}.`,
     heatingQ: "Is the heat pump heating?",
     heatingYes: (v) => `Yes. The supply air goes into every room at ${v.supply}, also those already warm enough.`,
     heatingNo: "No.",
@@ -1932,6 +1958,8 @@ class RoomCard extends SccCard {
       out.push({ kind: "yes", q: d.setpointQ, a: d.setpointNight({ night: deg(hass, night), end: up.night_ends ? clock(hass, up.night_ends) : "" }), short: d.setpointShort });
     } else if (a.reason_code === "holiday") {
       out.push({ kind: "yes", q: d.setpointQ, a: d.setpointHoliday({ target: deg(hass, a.target_temperature) }), short: d.setpointShort });
+    } else if (a.reason_code === "energy_blocked") {
+      out.push({ kind: "yes", q: d.setpointQ, a: d.setpointSaving({ drop: kelvin(hass, setting(m.hub, "blocked_target_drop") ?? 1), target: deg(hass, a.target_temperature) }), short: d.setpointShort });
     } else {
       out.push({ kind: "no", q: d.setpointQ, a: d.setpointNo({ day: deg(hass, day), night: deg(hass, night) }) });
     }
@@ -2015,6 +2043,8 @@ class RoomCard extends SccCard {
     const out = [];
     if (a.reason_code === "surplus") {
       out.push({ kind: "yes", q: d.boostQ, a: d.boostYes({ boost: kelvin(hass, setting(m.hub, "surplus_target_boost") ?? 1) }), short: d.boostShort });
+    } else if (a.reason_code === "surplus_forced") {
+      out.push({ kind: "yes", q: d.boostQ, a: d.boostPlenty({ boost: kelvin(hass, setting(m.hub, "forced_target_boost") ?? 2) }), short: d.boostShort });
     } else {
       out.push({ kind: "no", q: d.boostQ, a: d.boostNo({ target: deg(hass, a.target_temperature) }) });
     }
@@ -2234,7 +2264,7 @@ class HouseCard extends SccCard {
     const compressor = source(hass, m.hub, "compressor");
     const heating = hub.mode === "heating" && compressor && RUNNING(compressor.state);
     const auxOn = m.rooms.filter((room) => attrs(room.state).auxiliary_heat);
-    const boosted = m.rooms.filter((room) => attrs(room.state).reason_code === "surplus");
+    const boosted = m.rooms.filter((room) => ["surplus", "surplus_forced"].includes(attrs(room.state).reason_code));
     const excess = thresholdsOf(m.hub).fan_heat_cap?.value;
     const coolSwitch = source(hass, m.hub, "cool_release");
     const reason = say(hass).reason[hub.reason_code];
