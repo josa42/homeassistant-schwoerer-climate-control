@@ -1057,6 +1057,7 @@ const SENTENCES = {
       supply: (v) => `Die Zuluft ist nur ${v.lift} wärmer als der Raum`,
       stalled: () => "Mit der Zuluft allein holt der Raum nicht auf",
       plain: (v) => `${v.deficit} unter Soll`,
+      boost: () => "Boost, bis er ausgeschaltet wird",
     },
     auxWaiting: (v) => `Wartet noch ${v.left}, dann an`,
     auxWatching: (v) => `Zuluft ${v.lift} wärmer als der Raum, die Wärmepumpe soll es schaffen. Raum wird beobachtet: ${v.rise} von ${v.need} gestiegen.`,
@@ -1109,6 +1110,7 @@ const SENTENCES = {
       supply: (v) => `The supply air is only ${v.lift} above the room`,
       stalled: () => "The room does not catch up on supply air alone",
       plain: (v) => `${v.deficit} below target`,
+      boost: () => "Boost, until it is switched off",
     },
     auxWaiting: (v) => `Waiting another ${v.left}, then on`,
     auxWatching: (v) => `Supply air ${v.lift} above the room, the heat pump should manage. Watching the room: risen ${v.rise} of ${v.need}.`,
@@ -1184,7 +1186,8 @@ function auxStatus(hass, hub, room) {
   const deficit = target !== null && temperature !== null ? target - temperature : null;
   if (a.auxiliary_heat) {
     let why = s.auxRunningWhy.plain({ deficit: kelvin(hass, deficit) });
-    if (gate(room.state, "aux_override")?.passed) why = s.auxRunningWhy.override({ deficit: kelvin(hass, deficit) });
+    if (a.reason_code === "boost") why = s.auxRunningWhy.boost();
+    else if (gate(room.state, "aux_override")?.passed) why = s.auxRunningWhy.override({ deficit: kelvin(hass, deficit) });
     else if (gate(room.state, "aux_not_catching_up")?.passed) why = s.auxRunningWhy.stalled();
     else if (gate(room.state, "aux_supply_insufficient")?.passed && thr.aux_supply) why = s.auxRunningWhy.supply({ lift: kelvin(hass, thr.aux_supply.value) });
     return { wgt: true, allowed: true, state: w.on, tone: "solid", why };
@@ -1586,6 +1589,7 @@ const DIAGNOSIS = {
     roomCold: "Warum ist es hier kühl?",
     roomWarm: "Warum ist es hier warm?",
     roomFine: "Der Raum ist auf Soll.",
+    roomBoost: "Boost: der Raum heizt mit voller Leistung, bis der Boost ausgeschaltet wird.",
     actual: "Ist",
     target: "Soll",
     gap: "Abstand",
@@ -1702,6 +1706,7 @@ const DIAGNOSIS = {
     roomCold: "Why is it cool in here?",
     roomWarm: "Why is it warm in here?",
     roomFine: "The room is at target.",
+    roomBoost: "Boost: the room heats at full until the boost is switched off.",
     actual: "Actual",
     target: "Target",
     gap: "Gap",
@@ -1892,11 +1897,13 @@ class RoomCard extends SccCard {
       [d.target, deg(hass, target)],
       [d.gap, gap === null ? "–" : `${gap >= 0 ? "+" : "−"}${kelvin(hass, Math.abs(gap))}`, gap !== null && gap <= -0.5 ? "orange" : ""],
     ];
-    const cold = gap !== null && gap <= -0.2;
-    const warm = gap !== null && gap >= 0.5;
+    // A boosted room is short of its target on purpose, which is no cause to look for.
+    const boost = a.reason_code === "boost";
+    const cold = !boost && gap !== null && gap <= -0.2;
+    const warm = !boost && gap !== null && gap >= 0.5;
     const causes = cold ? this._cold(hass, m, room) : warm ? this._warm(hass, m, room) : [];
     const shorts = causes.filter((c) => c.short).map((c) => c.short);
-    const text = !cold && !warm ? d.roomFine : shorts.length ? shorts.join(" ") : d.noCause({ gap: kelvin(hass, Math.abs(gap)) });
+    const text = boost ? d.roomBoost : !cold && !warm ? d.roomFine : shorts.length ? shorts.join(" ") : d.noCause({ gap: kelvin(hass, Math.abs(gap)) });
 
     const status = auxStatus(hass, m.hub, room);
     const next = levers(hass, room.state, ROOM_LEVERS, 5).map((l) => l.html).join("");

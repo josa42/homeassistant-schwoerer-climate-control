@@ -172,6 +172,8 @@ class RoomIntent(StrEnum):
     #: the device shows a sensible number and means it again the moment the
     #: mode returns to heating.
     IDLE = "idle"
+    #: Heating at full, because something outside the controller asked for it.
+    BOOST = "boost"
 
 
 class Reason(StrEnum):
@@ -224,6 +226,7 @@ class RoomReason(StrEnum):
     COOLING = "cooling"
     VENTILATION_ONLY = "ventilation_only"
     SURPLUS = "surplus"
+    BOOST = "boost"
 
 
 ################################################################################

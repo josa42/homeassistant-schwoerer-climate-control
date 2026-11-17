@@ -111,6 +111,8 @@ class RoomInputs:
     #: Whether the device reports the room's auxiliary heater as released now,
     #: which is what the hysteresis holds on to. ``None`` for a room without one.
     auxiliary_enabled: Reading | None = None
+    #: Heat this room at full, whatever the rest of the decision says.
+    boost: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -726,6 +728,14 @@ def _room_decision(
             # number and means it again the moment heating is allowed.
             intent = RoomIntent.IDLE
 
+    if room.boost:
+        # Something outside the controller wants this room heated now, a towel
+        # rail after a shower, say. It is taken at its word: no mode, window or
+        # time of day overrules it.
+        target = TARGET_MAX
+        intent, reason = RoomIntent.BOOST, RoomReason.BOOST
+        gates.append(Gate("boost", True, f"target {TARGET_MAX}"))
+
     # Rounded to what the device can store, so that the value the engine means
     # and the value it will read back are the same number.
     target = _quantize(_clamp(target, TARGET_MIN, TARGET_MAX))
@@ -795,7 +805,12 @@ def _room_decision(
 
         wanted = allowed and needed
         auxiliary = wanted
-        if wanted and not running:
+        if room.boost:
+            # The dwell neither: whoever asked for the boost has already waited
+            # as long as they meant to.
+            auxiliary, wanted, progress = True, False, None
+            aux_why = "of the boost"
+        elif wanted and not running:
             # Only on the way in. A heater that runs has already waited, and
             # one being withdrawn should go at once.
             held = now - (aux_since or now)
@@ -814,7 +829,7 @@ def _room_decision(
     else:
         # A heater of its own regulates its room; all this decides is whether it
         # may run. The setpoint already carries holiday and the night setback.
-        heating_enabled = mode is Mode.HEATING and not window_open
+        heating_enabled = room.boost or (mode is Mode.HEATING and not window_open)
         gates.append(Gate("heating_allowed", heating_enabled, f"mode is {mode}"))
 
     thresholds, upcoming = _room_outlook(
@@ -982,6 +997,8 @@ def _room_message(
     elif reason is RoomReason.SURPLUS:
         boost = config.number(CONF_SURPLUS_TARGET_BOOST)
         head = f"Surplus, target raised by {boost} K to {target} °C"
+    elif reason is RoomReason.BOOST:
+        head = f"Boost, target {target} °C"
     else:
         head = f"Target {target} °C"
 

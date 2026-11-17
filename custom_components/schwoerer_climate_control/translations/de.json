@@ -238,6 +238,9 @@
       "aux_heat_at_night": {
         "name": "Zuheizer nachts"
       },
+      "boost": {
+        "name": "Boost"
+      },
       "dry_run": {
         "name": "Testbetrieb"
       }
@@ -280,6 +283,7 @@
           "holiday": "Urlaub",
           "night": "Nacht",
           "normal": "Normal",
+          "boost": "Boost",
           "idle": "Ruhend"
         }
       },
