@@ -14,7 +14,9 @@ from custom_components.schwoerer_climate_control.const import (
     CONF_AUX_HEAT_OFF_AT_NIGHT,
     CONF_BLOCKED_TARGET_DROP,
     CONF_CO2_HIGH,
+    CONF_DRAFT_CAP_BELOW,
     CONF_FAN_AIR_QUALITY,
+    CONF_FAN_DRAFT_CAP,
     CONF_FAN_QUIET_MAX,
     CONF_FORCED_TARGET_BOOST,
     CONF_FROST_PROTECTION_BELOW,
@@ -1285,6 +1287,108 @@ def test_a_cooler_outside_is_not_capped() -> None:
     decision, _ = run(inputs, mode=Mode.VENTILATION)
     assert decision.fan_level == 2
     assert decision.fan_capped_from is None
+
+
+################################################################################
+# Not blowing cold air into a warm room
+
+
+def cold_supply(supply: float = 19.3, **overrides: Any) -> Inputs:
+    """Heating with the compressor standing still, as on a mild night."""
+    defaults: dict[str, Any] = {
+        "outdoor": read(8.6),
+        "extract": read(22.6),
+        "supply_air": read(supply),
+        "heat_release": read(True),
+    }
+    defaults.update(overrides)
+    return given(**defaults)
+
+
+def test_the_fan_is_capped_while_the_supply_air_is_cold() -> None:
+    decision, state = run(cold_supply())
+    assert decision.fan_level == 1
+    assert decision.fan_reason is FanReason.DRAFT_PROTECTION
+    assert decision.fan_capped_from == 2
+    assert state.draft_capped is True
+
+
+def test_supply_air_close_to_the_extract_air_is_not_capped() -> None:
+    decision, state = run(cold_supply(supply=21.0))
+    assert decision.fan_level == 2
+    assert decision.fan_capped_from is None
+    assert state.draft_capped is False
+
+
+def test_the_cap_holds_until_the_supply_air_has_come_back_past_the_hysteresis() -> None:
+    capped = EngineState(draft_capped=True)
+    # 1.8 K short: below the 2 K that set it, inside the 0.5 K that lifts it.
+    held, state = run(cold_supply(supply=20.8), state=capped)
+    assert held.fan_level == 1
+    assert state.draft_capped is True
+    lifted, state = run(cold_supply(supply=21.2), state=capped)
+    assert lifted.fan_level == 2
+    assert state.draft_capped is False
+
+
+def test_a_running_compressor_is_not_capped() -> None:
+    # Right after it starts the supply air is still cold, but it is about to be
+    # warm, and by day the heat pump wants more air rather than less.
+    decision, state = run(cold_supply(compressor_running=read(True)))
+    assert decision.fan_level == 3
+    assert decision.fan_reason is FanReason.HEAT_PUMP
+    assert state.draft_capped is False
+
+
+def test_an_unreadable_compressor_is_no_reason_to_cap() -> None:
+    decision, _ = run(cold_supply(compressor_running=read(None)))
+    assert decision.fan_level == 2
+
+
+def test_the_cap_applies_only_while_heating() -> None:
+    # Ventilating in summer, cool supply air is what the bypass is for.
+    decision, _ = run(cold_supply(), mode=Mode.VENTILATION)
+    assert decision.fan_level == 2
+
+
+def test_the_cap_also_holds_the_night_stage_down() -> None:
+    decision, _ = run(cold_supply(now=NIGHT), hub={"fan_night": 2})
+    assert decision.fan_level == 1
+    assert decision.fan_reason is FanReason.DRAFT_PROTECTION
+
+
+def test_air_quality_wins_over_the_cap() -> None:
+    bath = a_room("bad", humidity=read(76.0))
+    decision, _ = run(cold_supply(rooms=(bath,)))
+    assert decision.fan_level == 3
+    assert decision.fan_reason is FanReason.HUMIDITY_HIGH
+
+
+def test_a_boost_wins_over_the_cap() -> None:
+    decision, _ = run(cold_supply(), fan_request=FanMode.BOOST)
+    assert decision.fan_level == 3
+    assert decision.fan_reason is FanReason.BOOST
+
+
+def test_the_cap_falls_back_to_the_rooms_without_an_extract_reading() -> None:
+    inputs = cold_supply(extract=None, rooms=(a_room(temperature=read(22.0)),))
+    assert run(inputs)[0].fan_reason is FanReason.DRAFT_PROTECTION
+
+
+def test_the_cap_is_a_setting() -> None:
+    decision, _ = run(cold_supply(), hub={CONF_DRAFT_CAP_BELOW: 4.0})
+    assert decision.fan_level == 2
+    decision, _ = run(cold_supply(), hub={CONF_FAN_DRAFT_CAP: 0})
+    assert decision.fan_level == 0
+    assert decision.settings["draft_cap_below"]["source"] == "default"
+
+
+def test_the_outlook_says_how_close_the_cap_is() -> None:
+    decision, _ = run(cold_supply(supply=21.0))
+    cap = thresholds(decision)["fan_draft_cap"]
+    assert cap["value"] == 1.6
+    assert cap["limit"] == 2.0
+    assert cap["when"] == "above"
 
 
 ################################################################################

@@ -45,6 +45,11 @@ SURPLUS_DWELL = timedelta(minutes=20)
 #: defrosts, is not a reason to switch on the most expensive heat in the house.
 AUX_DWELL = timedelta(minutes=15)
 
+#: How much closer to the extract air the supply air has to come before a
+#: draft cap is lifted. The reading wanders by a few tenths, and a cap that
+#: comes and goes with it moves the fans for nothing.
+DRAFT_HYSTERESIS = 0.5
+
 #: How much more the supply air has to bring before a running auxiliary heater
 #: is withdrawn for it, on top of the margin that switched it on. Without it the
 #: heater flips with every tenth the supply air moves around the margin.
@@ -226,6 +231,9 @@ class FanReason(StrEnum):
     #: Outside is warmer than the air leaving the house, so ventilating imports
     #: heat. Beats everything, including air quality.
     HEAT_PROTECTION = "heat_protection"
+    #: Heating with the compressor standing still, the supply air arrives well
+    #: below the room and is felt as a draft.
+    DRAFT_PROTECTION = "draft_protection"
     HOLIDAY = "holiday"
     NIGHT = "night"
     NORMAL = "normal"
@@ -383,6 +391,12 @@ CONF_HEAT_CAP_ABOVE = "heat_cap_above"
 CONF_FAN_HEAT_CAP = "fan_heat_cap"
 CONF_FAN_OFF_ABOVE = "fan_off_above"
 
+# Not blowing cold air into a warm room. While heating with the compressor
+# standing still, only the exchanger warms the supply air, and it arrives some
+# kelvin below the extract air.
+CONF_DRAFT_CAP_BELOW = "draft_cap_below"
+CONF_FAN_DRAFT_CAP = "fan_draft_cap"
+
 #: The lowest and highest the device accepts for a room setpoint. Asking for
 #: anything outside this is rejected by the field rather than clamped, so the
 #: engine clamps.
@@ -442,6 +456,10 @@ DEFAULTS: dict[str, object] = {
     # A warm afternoon and a heat wave are not the same thing. Past this much
     # excess the fan is allowed to stop altogether.
     CONF_FAN_OFF_ABOVE: 10.0,
+    # The exchanger alone leaves the supply air two to three kelvin below the
+    # extract air on this house, which is when it starts to feel like a draft.
+    CONF_DRAFT_CAP_BELOW: 2.0,
+    CONF_FAN_DRAFT_CAP: 1,
 }
 
 #: Settings a room may override. Everything else is the hub's alone, because a

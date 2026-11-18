@@ -46,10 +46,12 @@ from .const import (
     CONF_COOL_RELEASE_ABOVE,
     CONF_COOL_RELEASE_SWITCH,
     CONF_DECLINED_ENTITIES,
+    CONF_DRAFT_CAP_BELOW,
     CONF_DRY_RUN,
     CONF_EXTRACT_TEMPERATURE_SENSOR,
     CONF_FAN_AIR_QUALITY,
     CONF_FAN_BOOST,
+    CONF_FAN_DRAFT_CAP,
     CONF_FAN_HEAT_CAP,
     CONF_FAN_HEAT_PUMP,
     CONF_FAN_HOLIDAY,
@@ -283,6 +285,8 @@ def thresholds_schema(values: Mapping[str, Any]) -> vol.Schema:
         CONF_HEAT_CAP_ABOVE: _temperature(0, 20),
         CONF_FAN_HEAT_CAP: _stage(),
         CONF_FAN_OFF_ABOVE: _temperature(0, 30),
+        CONF_DRAFT_CAP_BELOW: _kelvin(0, 10),
+        CONF_FAN_DRAFT_CAP: _stage(),
     }
     for key, field in fields.items():
         schema[vol.Required(key, default=merged[key])] = field

@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Draft protection.** While heating with the heat pump standing still, the
+  supply air warmed by the exchanger alone arrives some kelvin below the room.
+  Once it is more than 2 K below the extract air the fan comes down to stage 1,
+  and back up once it is within 1.5 K or the compressor runs. Air quality and a
+  boost still raise the fan. Both numbers are settings on the hub, and the
+  decision names it as `draft_protection`.
+
 ## 1.9.0 - 2026-11-18
 
 ### Added

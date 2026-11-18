@@ -133,7 +133,9 @@
           "blocked_target_drop": "Beim Sparen Sollwert senken um",
           "heat_cap_above": "Lüfter deckeln, wenn es draußen wärmer ist um",
           "fan_heat_cap": "Luftstufe solange es draußen wärmer ist",
-          "fan_off_above": "Lüfter aus, wenn es draußen wärmer ist um"
+          "fan_off_above": "Lüfter aus, wenn es draußen wärmer ist um",
+          "draft_cap_below": "Lüfter deckeln, wenn die Zuluft kälter als die Abluft ist um",
+          "fan_draft_cap": "Luftstufe solange die Zuluft kalt ist"
         }
       }
     }
