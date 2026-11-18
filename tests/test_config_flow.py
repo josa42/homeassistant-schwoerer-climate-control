@@ -13,7 +13,9 @@ from custom_components.schwoerer_climate_control.const import (
     CONF_AUX_HOUSE_SWITCH,
     CONF_BLOCKED_TARGET_DROP,
     CONF_CLIMATE_ENTITY,
+    CONF_DRAFT_CAP_BELOW,
     CONF_DRY_RUN,
+    CONF_FAN_DRAFT_CAP,
     CONF_FAN_SELECT,
     CONF_NAME,
     CONF_OUTDOOR_SENSOR,
@@ -431,3 +433,23 @@ async def test_the_energy_settings_are_asked_for_and_used(
     await hass.async_block_till_done()
     assert coordinator.data.energy is EnergyLevel.BLOCKED
     assert coordinator.data.rooms[0].target_temperature == 18.0
+
+
+async def test_the_draft_settings_are_asked_for_and_saved(
+    hass: HomeAssistant, entry, unit, setup_entry
+) -> None:
+    unit()
+    await setup_entry(entry)
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "thresholds"}
+    )
+    defaults = {str(marker): marker.default() for marker in result["data_schema"].schema}
+    assert defaults[CONF_DRAFT_CAP_BELOW] == 2.0
+    assert defaults[CONF_FAN_DRAFT_CAP] == 1
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {**defaults, CONF_DRAFT_CAP_BELOW: 3.0}
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert entry.options[CONF_DRAFT_CAP_BELOW] == 3.0

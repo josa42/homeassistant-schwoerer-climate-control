@@ -133,7 +133,9 @@
           "blocked_target_drop": "While saving, lower the target by",
           "heat_cap_above": "Cap the fan when it is warmer outside by",
           "fan_heat_cap": "Fan level while it is warmer outside",
-          "fan_off_above": "Stop the fan when it is warmer outside by"
+          "fan_off_above": "Stop the fan when it is warmer outside by",
+          "draft_cap_below": "Cap the fan when the supply air is colder than the extract air by",
+          "fan_draft_cap": "Fan level while the supply air is cold"
         }
       }
     }

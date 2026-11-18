@@ -121,8 +121,11 @@ flowchart TD
     hpraise --> mode{Fan select}
     mode -->|boost| boost[Raise to at least 3]
     mode -->|quiet| quiet[Cap at 1]
-    mode -->|automatic| cooling
-    boost & quiet --> cooling{Cooling?}
+    mode -->|automatic| draft
+    quiet --> draft{Heating, compressor still and<br/>supply air 2 K below the extract air?}
+    draft -->|"yes, unless air quality"| draftcap[Cap at 1]
+    draft -->|no| cooling
+    boost & draftcap --> cooling{Cooling?}
     cooling -->|yes| floor[Raise to at least 1]
     cooling -->|no| heat
     floor --> heat{Not heating and warmer<br/>outside than the extract air?}
@@ -147,6 +150,7 @@ hub, under **Configure** → **Temperatures, thresholds and fan levels**.
 | Heat pump | Mode, time and the heat pump status | While heating by day with the compressor running, at least 3 | `fan_heat_pump` |
 | Boost | The fan select | At least 3 | `fan_boost` |
 | Quiet | The fan select | At most 1, and the decision records what it capped | `fan_quiet_max` |
+| Draft protection | Mode, the heat pump status, supply against extract air | While heating with the compressor standing still and the supply air more than 2 K below the extract air, at most 1, until it is back within 1.5 K | `draft_cap_below`, `fan_draft_cap` |
 | Cooling floor | Mode | While cooling, at least 1, because stage 0 shuts the bypass | |
 | Heat protection | Outdoor against extract air | Unless heating: 3 K warmer outside caps at 1, 10 K stops the fan | `heat_cap_above`, `fan_heat_cap`, `fan_off_above` |
 
@@ -167,6 +171,12 @@ A few things follow from the order.
   humidity with 39 °C air makes the humidity worse rather than better, because the
   warmer air carries far more water. It does not apply while heating, where the
   warmth coming in is the point.
+- **Cold supply air is held down, not air quality.** With the compressor
+  standing still only the exchanger warms the supply air, and on a mild night it
+  arrives around 3 K below the room, which is felt as a draft. Less air is less
+  draft, so the fan comes down to 1. Humidity, CO₂ and a boost still raise it,
+  because they are worth a draft. A running compressor lifts the cap at once,
+  and a heat pump status that cannot be read does not cap.
 - **A fixed stage overrides everything**, heat protection and stage 0 included.
 
 ### The auxiliary heaters

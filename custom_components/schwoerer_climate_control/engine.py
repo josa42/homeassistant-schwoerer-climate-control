@@ -33,8 +33,10 @@ from .const import (
     CONF_BLOCKED_TARGET_DROP,
     CONF_CO2_HIGH,
     CONF_COOL_RELEASE_ABOVE,
+    CONF_DRAFT_CAP_BELOW,
     CONF_FAN_AIR_QUALITY,
     CONF_FAN_BOOST,
+    CONF_FAN_DRAFT_CAP,
     CONF_FAN_HEAT_CAP,
     CONF_FAN_HEAT_PUMP,
     CONF_FAN_HOLIDAY,
@@ -65,6 +67,7 @@ from .const import (
     CONF_TARGET_NORMAL,
     CONF_TARGET_WINDOW_OPEN,
     CONTACT_DWELL,
+    DRAFT_HYSTERESIS,
     FAN_MAX,
     FAN_MIN,
     OUTDOOR_MAX_AGE,
@@ -174,6 +177,9 @@ class EngineState:
     aux_needed_since: Mapping[str, datetime] = field(default_factory=dict)
     #: Per room left to the heat pump, whether it is catching up.
     aux_progress: Mapping[str, AuxProgress] = field(default_factory=dict)
+    #: Whether the fan is held down against cold supply air, which it stays
+    #: until the supply air has come back past the hysteresis.
+    draft_capped: bool = False
 
 
 def _parse_time(value: str) -> time:
@@ -650,6 +656,8 @@ SYSTEM_SETTINGS: tuple[str, ...] = (
     CONF_FAN_HEAT_CAP,
     CONF_FAN_OFF_ABOVE,
     CONF_HEAT_CAP_ABOVE,
+    CONF_DRAFT_CAP_BELOW,
+    CONF_FAN_DRAFT_CAP,
     CONF_SURPLUS_START,
     CONF_SURPLUS_STOP,
     CONF_SURPLUS_TARGET_BOOST,
@@ -1114,6 +1122,50 @@ def _heat_ceiling(config: EffectiveConfig, excess: float | None) -> int | None:
     return None
 
 
+def _supply_deficit(inputs: Inputs) -> float | None:
+    """How much colder the supply air arrives than the air leaving the house.
+
+    Measured against the extract air for the same reason as the excess above:
+    it is what the exchanger recovers from. Without it the mean room
+    temperature stands in.
+    """
+    supply = None if inputs.supply_air is None else inputs.supply_air.as_number()
+    reference = None if inputs.extract is None else inputs.extract.as_number()
+    if reference is None:
+        readings = [
+            value
+            for room in inputs.rooms
+            if (value := room.temperature.as_number()) is not None
+        ]
+        reference = sum(readings) / len(readings) if readings else None
+    if supply is None or reference is None:
+        return None
+    return reference - supply
+
+
+def _draft_capped(
+    config: EffectiveConfig, inputs: Inputs, state: EngineState, *, mode: Mode
+) -> bool:
+    """Whether the fan is held down because the supply air feels cold.
+
+    Only while heating with the compressor standing still: then the exchanger
+    alone warms the supply air, and more air is more cold air in a warm room.
+    A running compressor heats the supply air far above the room, and a status
+    that cannot be read is no reason to hold the fan down.
+    """
+    if mode is not Mode.HEATING:
+        return False
+    if inputs.compressor_running.missing or bool(inputs.compressor_running.value):
+        return False
+    deficit = _supply_deficit(inputs)
+    if deficit is None:
+        return False
+    limit = config.number(CONF_DRAFT_CAP_BELOW)
+    if state.draft_capped:
+        limit -= DRAFT_HYSTERESIS
+    return deficit > limit
+
+
 def _system_outlook(
     config: EffectiveConfig,
     inputs: Inputs,
@@ -1158,6 +1210,17 @@ def _system_outlook(
         thresholds.append(
             Threshold("aux_outdoor", outdoor, config.number(CONF_AUX_HEAT_BELOW), "°C", "above")
         )
+        deficit = _supply_deficit(inputs)
+        if deficit is not None:
+            thresholds.append(
+                Threshold(
+                    "fan_draft_cap",
+                    round(deficit, 2),
+                    config.number(CONF_DRAFT_CAP_BELOW),
+                    "K",
+                    "above",
+                )
+            )
     else:
         excess = _heat_excess(inputs, hub)
         if excess is not None:
@@ -1207,6 +1270,7 @@ def _fan_level(
     holiday: bool,
     is_night: bool,
     co2_high_since: Mapping[str, datetime],
+    draft_capped: bool = False,
 ) -> tuple[int, FanReason, str | None, int | None]:
     """Decide the one fan level the whole unit runs at.
 
@@ -1301,6 +1365,19 @@ def _fan_level(
         ceiling = int(config.number(CONF_FAN_QUIET_MAX))
         if level > ceiling:
             capped_from, level = level, ceiling
+
+    # Comfort, not protection, so it yields to what is worth a draft: air
+    # quality, and a boost someone asked for.
+    if draft_capped and reason not in (
+        FanReason.CO2_HIGH,
+        FanReason.HUMIDITY_HIGH,
+        FanReason.BOOST,
+    ):
+        ceiling = int(config.number(CONF_FAN_DRAFT_CAP))
+        if level > ceiling:
+            if capped_from is None:
+                capped_from = level
+            level, reason, requested_by = ceiling, FanReason.DRAFT_PROTECTION, None
 
     if mode is Mode.COOLING and level < 1:
         # Stage 0 shuts the bypass damper, so asking for it while cooling is
@@ -1511,6 +1588,8 @@ def evaluate(
         any(room.auxiliary_heat for room in aux_rooms) if aux_rooms else None
     )
 
+    draft_capped = _draft_capped(config, inputs, state, mode=effective_mode)
+    new_state = replace(new_state, draft_capped=draft_capped)
     fan_level, fan_reason, fan_requested_by, fan_capped_from = _fan_level(
         rooms,
         inputs,
@@ -1520,6 +1599,7 @@ def evaluate(
         holiday=holiday,
         is_night=is_night,
         co2_high_since=new_state.co2_high_since,
+        draft_capped=draft_capped,
     )
 
     thresholds, upcoming = _system_outlook(
