@@ -26,12 +26,17 @@ what the fan level should be. Rooms the WGT does not heat can join in through an
 
 ## Installation
 
+[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=josa42&repository=homeassistant-schwoerer-climate-control&category=integration)
+
 ### Requirements
 
 - Home Assistant **2026.9.0** or newer
 - The [schwoerer_lueftung](https://github.com/josa42/homeassistant-schwoerer-lueftung)
   integration, set up and reporting
 - A Schwörer WGT. A WRT has nothing to heat with, so most of this does not apply.
+
+[Manual installation](docs/manual_installation.md) covers adding the repository
+by hand and installing without HACS.
 
 <br><br>
 
