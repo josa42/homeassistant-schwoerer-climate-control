@@ -14,6 +14,10 @@ from custom_components.schwoerer_climate_control.const import (
     CONF_BLOCKED_TARGET_DROP,
     CONF_CLIMATE_ENTITY,
     CONF_DRAFT_CAP_BELOW,
+    CONF_DRAFT_PAUSE_BELOW,
+    CONF_DRAFT_PAUSE_END,
+    CONF_DRAFT_PAUSE_PRESENCE,
+    CONF_DRAFT_PAUSE_START,
     CONF_DRY_RUN,
     CONF_FAN_DRAFT_CAP,
     CONF_FAN_SELECT,
@@ -448,8 +452,26 @@ async def test_the_draft_settings_are_asked_for_and_saved(
     defaults = {str(marker): marker.default() for marker in result["data_schema"].schema}
     assert defaults[CONF_DRAFT_CAP_BELOW] == 2.0
     assert defaults[CONF_FAN_DRAFT_CAP] == 1
+    assert defaults[CONF_DRAFT_PAUSE_BELOW] == 4.0
+    assert defaults[CONF_DRAFT_PAUSE_START] == "18:00"
+    assert defaults[CONF_DRAFT_PAUSE_END] == "00:00"
     result = await hass.config_entries.options.async_configure(
         result["flow_id"], {**defaults, CONF_DRAFT_CAP_BELOW: 3.0}
     )
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert entry.options[CONF_DRAFT_CAP_BELOW] == 3.0
+
+
+async def test_the_presence_sensors_are_offered_with_the_unit(
+    hass: HomeAssistant, entry, unit, setup_entry
+) -> None:
+    unit()
+    await setup_entry(entry)
+
+    result = await open_entities(hass, entry)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {**HUB_DATA, CONF_DRAFT_PAUSE_PRESENCE: ["binary_sensor.sofa_presence"]},
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert entry.options[CONF_DRAFT_PAUSE_PRESENCE] == ["binary_sensor.sofa_presence"]

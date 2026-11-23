@@ -50,6 +50,16 @@ AUX_DWELL = timedelta(minutes=15)
 #: comes and goes with it moves the fans for nothing.
 DRAFT_HYSTERESIS = 0.5
 
+#: How long a presence sensor that has cleared still counts as someone there.
+#: Someone fetching a glass from the kitchen has not left, and a fan that starts
+#: and stops with them is louder than the draft it spares.
+PRESENCE_HOLD = timedelta(minutes=5)
+
+#: How far below its target a room has to fall before it ends a draft pause.
+#: The unit raises the fan itself when it has to heat, so this is the fallback
+#: for when it does not: at stage 0 the compressor cannot run.
+DRAFT_PAUSE_ROOM_DEFICIT = 0.5
+
 #: How much more the supply air has to bring before a running auxiliary heater
 #: is withdrawn for it, on top of the margin that switched it on. Without it the
 #: heater flips with every tenth the supply air moves around the margin.
@@ -234,6 +244,9 @@ class FanReason(StrEnum):
     #: Heating with the compressor standing still, the supply air arrives well
     #: below the room and is felt as a draft.
     DRAFT_PROTECTION = "draft_protection"
+    #: Further still below the room, inside the configured window, the fan
+    #: stops altogether.
+    DRAFT_PAUSE = "draft_pause"
     HOLIDAY = "holiday"
     NIGHT = "night"
     NORMAL = "normal"
@@ -316,6 +329,10 @@ CONF_SURPLUS_FORCED = "surplus_forced"
 #: What the unit draws, from a meter of the user's own. Only the dashboard reads
 #: it; no decision depends on it.
 CONF_POWER_SENSOR = "power_sensor"
+#: Presence sensors where a draft is felt, the sofa rather than the house.
+#: While any are configured the fan only pauses against cold supply air when one
+#: of them sees someone.
+CONF_DRAFT_PAUSE_PRESENCE = "draft_pause_presence"
 
 # A room.
 CONF_ACTUATOR = "actuator"
@@ -396,6 +413,10 @@ CONF_FAN_OFF_ABOVE = "fan_off_above"
 # kelvin below the extract air.
 CONF_DRAFT_CAP_BELOW = "draft_cap_below"
 CONF_FAN_DRAFT_CAP = "fan_draft_cap"
+#: Colder still, and within a window of the day, the fan stops.
+CONF_DRAFT_PAUSE_BELOW = "draft_pause_below"
+CONF_DRAFT_PAUSE_START = "draft_pause_start"
+CONF_DRAFT_PAUSE_END = "draft_pause_end"
 
 #: The lowest and highest the device accepts for a room setpoint. Asking for
 #: anything outside this is rejected by the field rather than clamped, so the
@@ -460,6 +481,12 @@ DEFAULTS: dict[str, object] = {
     # extract air on this house, which is when it starts to feel like a draft.
     CONF_DRAFT_CAP_BELOW: 2.0,
     CONF_FAN_DRAFT_CAP: 1,
+    # On this house the exchanger alone leaves the supply air six to seven
+    # kelvin below the extract air on a frosty evening, which stage 1 does not
+    # make comfortable. The evening is when people sit in the living room.
+    CONF_DRAFT_PAUSE_BELOW: 4.0,
+    CONF_DRAFT_PAUSE_START: "18:00",
+    CONF_DRAFT_PAUSE_END: "00:00",
 }
 
 #: Settings a room may override. Everything else is the hub's alone, because a

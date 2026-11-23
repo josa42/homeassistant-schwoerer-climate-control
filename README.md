@@ -130,7 +130,10 @@ flowchart TD
     quiet --> draft{Heating, compressor still and<br/>supply air 2 K below the extract air?}
     draft -->|"yes, unless air quality"| draftcap[Cap at 1]
     draft -->|no| cooling
-    boost & draftcap --> cooling{Cooling?}
+    draftcap --> pause{"18:00 to 24:00, 4 K below,<br/>someone there, no room short?"}
+    pause -->|"yes, unless humidity"| paused[Stop: 0, CO₂ gets 1]
+    pause -->|no| cooling
+    boost & paused --> cooling{Cooling?}
     cooling -->|yes| floor[Raise to at least 1]
     cooling -->|no| heat
     floor --> heat{Not heating and warmer<br/>outside than the extract air?}
@@ -156,6 +159,7 @@ hub, under **Configure** → **Temperatures, thresholds and fan levels**.
 | Boost | The fan select | At least 3 | `fan_boost` |
 | Quiet | The fan select | At most 1, and the decision records what it capped | `fan_quiet_max` |
 | Draft protection | Mode, the heat pump status, supply against extract air | While heating with the compressor standing still and the supply air more than 2 K below the extract air, at most 1, until it is back within 1.5 K | `draft_cap_below`, `fan_draft_cap` |
+| Draft pause | The same, the time, the presence sensors and the rooms | From 18:00 to 24:00 with the supply air more than 4 K below the extract air, 0, while someone is there and no room of the unit is 0.5 K short of its target. CO₂ gets the cap rather than 3 | `draft_pause_below`, `draft_pause_start`, `draft_pause_end`, *Presence where a draft is felt* |
 | Cooling floor | Mode | While cooling, at least 1, because stage 0 shuts the bypass | |
 | Heat protection | Outdoor against extract air | Unless heating: 3 K warmer outside caps at 1, 10 K stops the fan | `heat_cap_above`, `fan_heat_cap`, `fan_off_above` |
 
@@ -182,6 +186,20 @@ A few things follow from the order.
   draft, so the fan comes down to 1. Humidity, CO₂ and a boost still raise it,
   because they are worth a draft. A running compressor lifts the cap at once,
   and a heat pump status that cannot be read does not cap.
+- **Colder still, the fan stops for the evening.** On a frosty evening the
+  supply air arrives six to seven kelvin below the room, which stage 1, the
+  least the unit runs at, does not make comfortable. Within the window the fan
+  stops instead, for as long as it takes: a house of this kind loses nothing by
+  a few hours without air, the people in it at most some freshness. Humidity
+  still raises the fan and CO₂ gets stage 1. Without air moving the supply
+  sensor reads the still air in the unit, so once stopped the fan does not ask it
+  again; the window, the presence sensors, a running compressor and the rooms
+  end the pause.
+- **At stage 0 the unit does not heat.** It stops the compressor rather than
+  raise the fan, so a room of the unit falling 0.5 K short of its target ends
+  the pause. With presence sensors under *Presence where a draft is felt*, the
+  sofa rather than the house, the fan only stops while one of them sees someone,
+  or saw them in the last five minutes. One that cannot be read sees no one.
 - **A fixed stage overrides everything**, heat protection and stage 0 included.
 
 ### The auxiliary heaters

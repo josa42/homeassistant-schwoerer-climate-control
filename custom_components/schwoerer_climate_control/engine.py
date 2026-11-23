@@ -34,6 +34,9 @@ from .const import (
     CONF_CO2_HIGH,
     CONF_COOL_RELEASE_ABOVE,
     CONF_DRAFT_CAP_BELOW,
+    CONF_DRAFT_PAUSE_BELOW,
+    CONF_DRAFT_PAUSE_END,
+    CONF_DRAFT_PAUSE_START,
     CONF_FAN_AIR_QUALITY,
     CONF_FAN_BOOST,
     CONF_FAN_DRAFT_CAP,
@@ -68,9 +71,11 @@ from .const import (
     CONF_TARGET_WINDOW_OPEN,
     CONTACT_DWELL,
     DRAFT_HYSTERESIS,
+    DRAFT_PAUSE_ROOM_DEFICIT,
     FAN_MAX,
     FAN_MIN,
     OUTDOOR_MAX_AGE,
+    PRESENCE_HOLD,
     RELEASE_LOCKOUT,
     SURPLUS_DWELL,
     TARGET_MAX,
@@ -145,6 +150,9 @@ class Inputs:
     #: While the compressor stands still a release may change freely, which is
     #: the other half of the lockout.
     compressor_running: Reading = Reading()
+    #: Whoever is there to feel a draft. Empty when none are configured, which
+    #: leaves the draft pause to its window alone.
+    presence: tuple[Reading, ...] = ()
     rooms: tuple[RoomInputs, ...] = ()
 
 
@@ -180,6 +188,10 @@ class EngineState:
     #: Whether the fan is held down against cold supply air, which it stays
     #: until the supply air has come back past the hysteresis.
     draft_capped: bool = False
+    #: Whether the fan is stopped against cold supply air. Without air moving
+    #: the supply sensor reads the still air in the unit, which warms up, so
+    #: once started the pause no longer asks it.
+    draft_paused: bool = False
 
 
 def _parse_time(value: str) -> time:
@@ -189,18 +201,22 @@ def _parse_time(value: str) -> time:
     return time(int(hour), int(minute or 0))
 
 
-def _is_night(config: EffectiveConfig, now: datetime) -> bool:
-    """Whether now falls in the configured night window.
+def _in_window(start: str, end: str, now: datetime) -> bool:
+    """Whether now falls between two times of day.
 
-    The window normally wraps midnight, which is why this is not a plain
-    comparison.
+    A window may wrap midnight, which is why this is not a plain comparison.
     """
-    start = _parse_time(config.get(CONF_NIGHT_START))
-    end = _parse_time(config.get(CONF_NIGHT_END))
+    begin = _parse_time(start)
+    until = _parse_time(end)
     current = now.time()
-    if start > end:
-        return current >= start or current < end
-    return start <= current < end
+    if begin > until:
+        return current >= begin or current < until
+    return begin <= current < until
+
+
+def _is_night(config: EffectiveConfig, now: datetime) -> bool:
+    """Whether now falls in the configured night window."""
+    return _in_window(config.get(CONF_NIGHT_START), config.get(CONF_NIGHT_END), now)
 
 
 def _clamp(value: float, low: float, high: float) -> float:
@@ -660,6 +676,9 @@ SYSTEM_SETTINGS: tuple[str, ...] = (
     CONF_HEAT_CAP_ABOVE,
     CONF_DRAFT_CAP_BELOW,
     CONF_FAN_DRAFT_CAP,
+    CONF_DRAFT_PAUSE_BELOW,
+    CONF_DRAFT_PAUSE_START,
+    CONF_DRAFT_PAUSE_END,
     CONF_SURPLUS_START,
     CONF_SURPLUS_STOP,
     CONF_SURPLUS_TARGET_BOOST,
@@ -1168,6 +1187,68 @@ def _draft_capped(
     return deficit > limit
 
 
+def _someone_there(presence: tuple[Reading, ...]) -> bool:
+    """Whether any presence sensor sees someone, or saw them a moment ago.
+
+    One that cannot be read sees no one. Taken the other way, a sensor gone
+    for an evening would keep the fan stopped for it.
+    """
+    for reading in presence:
+        if reading.missing:
+            continue
+        if reading.value:
+            return True
+        if reading.stable_for is not None and reading.stable_for < PRESENCE_HOLD:
+            return True
+    return False
+
+
+def _draft_paused(
+    config: EffectiveConfig,
+    inputs: Inputs,
+    state: EngineState,
+    rooms: tuple[RoomDecision, ...],
+    *,
+    mode: Mode,
+) -> bool:
+    """Whether the fan stops because the supply air is too cold for stage 1.
+
+    The same condition as the cap, further below the room, and only within the
+    window and while someone is there, if anything says who is. A room the unit
+    heats falling short of its target ends it: the unit raises the fan when it
+    has to heat, and if it did not, at stage 0 the compressor could not run.
+    """
+    if mode is not Mode.HEATING:
+        return False
+    if inputs.compressor_running.missing or bool(inputs.compressor_running.value):
+        return False
+    if not _in_window(
+        config.get(CONF_DRAFT_PAUSE_START), config.get(CONF_DRAFT_PAUSE_END), inputs.now
+    ):
+        return False
+    if inputs.presence and not _someone_there(inputs.presence):
+        return False
+    # Only the rooms the unit heats. A bathroom on its own radiator is no
+    # reason to blow cold air into the living room.
+    temperatures = {
+        room.room_id: room.temperature.as_number()
+        for room in inputs.rooms
+        if room.actuator is ActuatorKind.WGT_ROOM
+    }
+    for room in rooms:
+        temperature = temperatures.get(room.room_id)
+        if (
+            room.target_temperature is not None
+            and temperature is not None
+            and temperature < room.target_temperature - DRAFT_PAUSE_ROOM_DEFICIT
+        ):
+            return False
+    if state.draft_paused:
+        return True
+    deficit = _supply_deficit(inputs)
+    return deficit is not None and deficit > config.number(CONF_DRAFT_PAUSE_BELOW)
+
+
 def _system_outlook(
     config: EffectiveConfig,
     inputs: Inputs,
@@ -1223,6 +1304,15 @@ def _system_outlook(
                     "above",
                 )
             )
+            thresholds.append(
+                Threshold(
+                    "fan_draft_pause",
+                    round(deficit, 2),
+                    config.number(CONF_DRAFT_PAUSE_BELOW),
+                    "K",
+                    "above",
+                )
+            )
     else:
         excess = _heat_excess(inputs, hub)
         if excess is not None:
@@ -1273,6 +1363,7 @@ def _fan_level(
     is_night: bool,
     co2_high_since: Mapping[str, datetime],
     draft_capped: bool = False,
+    draft_paused: bool = False,
 ) -> tuple[int, FanReason, str | None, int | None]:
     """Decide the one fan level the whole unit runs at.
 
@@ -1380,6 +1471,19 @@ def _fan_level(
             if capped_from is None:
                 capped_from = level
             level, reason, requested_by = ceiling, FanReason.DRAFT_PROTECTION, None
+
+    # Humidity and a boost still raise it. CO₂ only gets the cap: enough air to
+    # clear it, without the full draft of the air quality stage.
+    if draft_paused and reason not in (FanReason.HUMIDITY_HIGH, FanReason.BOOST):
+        ceiling = (
+            int(config.number(CONF_FAN_DRAFT_CAP)) if reason is FanReason.CO2_HIGH else 0
+        )
+        if level > ceiling:
+            if capped_from is None:
+                capped_from = level
+            level = ceiling
+            if reason is not FanReason.CO2_HIGH:
+                reason, requested_by = FanReason.DRAFT_PAUSE, None
 
     if mode is Mode.COOLING and level < 1:
         # Stage 0 shuts the bypass damper, so asking for it while cooling is
@@ -1590,8 +1694,11 @@ def evaluate(
         any(room.auxiliary_heat for room in aux_rooms) if aux_rooms else None
     )
 
-    draft_capped = _draft_capped(config, inputs, state, mode=effective_mode)
-    new_state = replace(new_state, draft_capped=draft_capped)
+    draft_paused = _draft_paused(config, inputs, state, rooms, mode=effective_mode)
+    # A pause is the cap and more, and leaves the cap standing when it ends,
+    # because the supply sensor has only been reading still air.
+    draft_capped = draft_paused or _draft_capped(config, inputs, state, mode=effective_mode)
+    new_state = replace(new_state, draft_capped=draft_capped, draft_paused=draft_paused)
     fan_level, fan_reason, fan_requested_by, fan_capped_from = _fan_level(
         rooms,
         inputs,
@@ -1602,6 +1709,7 @@ def evaluate(
         is_night=is_night,
         co2_high_since=new_state.co2_high_since,
         draft_capped=draft_capped,
+        draft_paused=draft_paused,
     )
 
     thresholds, upcoming = _system_outlook(

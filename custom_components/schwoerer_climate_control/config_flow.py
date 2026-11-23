@@ -47,6 +47,10 @@ from .const import (
     CONF_COOL_RELEASE_SWITCH,
     CONF_DECLINED_ENTITIES,
     CONF_DRAFT_CAP_BELOW,
+    CONF_DRAFT_PAUSE_BELOW,
+    CONF_DRAFT_PAUSE_END,
+    CONF_DRAFT_PAUSE_PRESENCE,
+    CONF_DRAFT_PAUSE_START,
     CONF_DRY_RUN,
     CONF_EXTRACT_TEMPERATURE_SENSOR,
     CONF_FAN_AIR_QUALITY,
@@ -183,6 +187,12 @@ def unit_schema(values: Mapping[str, Any]) -> vol.Schema:
         _entity(["binary_sensor", "input_boolean", "input_select", "select", "sensor"]),
     )
     _optional(schema, CONF_POWER_SENSOR, values, _entity("sensor", device_class="power"))
+    _optional(
+        schema,
+        CONF_DRAFT_PAUSE_PRESENCE,
+        values,
+        _entity(["binary_sensor", "input_boolean"], multiple=True),
+    )
     _optional(schema, CONF_NOTIFY_SERVICE, values, _entity("notify"))
     schema[
         vol.Required(
@@ -287,6 +297,9 @@ def thresholds_schema(values: Mapping[str, Any]) -> vol.Schema:
         CONF_FAN_OFF_ABOVE: _temperature(0, 30),
         CONF_DRAFT_CAP_BELOW: _kelvin(0, 10),
         CONF_FAN_DRAFT_CAP: _stage(),
+        CONF_DRAFT_PAUSE_BELOW: _kelvin(0, 15),
+        CONF_DRAFT_PAUSE_START: selector.TimeSelector(),
+        CONF_DRAFT_PAUSE_END: selector.TimeSelector(),
     }
     for key, field in fields.items():
         schema[vol.Required(key, default=merged[key])] = field
@@ -378,6 +391,7 @@ UNIT_KEYS: tuple[str, ...] = (
     CONF_FORECAST_ENTITY,
     CONF_SURPLUS_ENTITY,
     CONF_POWER_SENSOR,
+    CONF_DRAFT_PAUSE_PRESENCE,
     CONF_NOTIFY_EVERY_CHANGE,
     CONF_NOTIFY_SERVICE,
     CONF_NOTIFY_EVERY_CHANGE,

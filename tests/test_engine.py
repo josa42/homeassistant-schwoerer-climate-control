@@ -11,10 +11,14 @@ import pytest
 from custom_components.schwoerer_climate_control.const import (
     AUX_DWELL,
     AUX_PROGRESS_WINDOW,
+    CO2_DWELL,
     CONF_AUX_HEAT_OFF_AT_NIGHT,
     CONF_BLOCKED_TARGET_DROP,
     CONF_CO2_HIGH,
     CONF_DRAFT_CAP_BELOW,
+    CONF_DRAFT_PAUSE_BELOW,
+    CONF_DRAFT_PAUSE_END,
+    CONF_DRAFT_PAUSE_START,
     CONF_FAN_AIR_QUALITY,
     CONF_FAN_DRAFT_CAP,
     CONF_FAN_QUIET_MAX,
@@ -45,6 +49,7 @@ from custom_components.schwoerer_climate_control.models import Reading
 
 NOON = datetime(2026, 1, 15, 12, 0)
 NIGHT = datetime(2026, 1, 15, 22, 0)
+EVENING = datetime(2026, 1, 15, 19, 0)
 
 LONG = timedelta(hours=2)
 BRIEF = timedelta(minutes=5)
@@ -1396,6 +1401,149 @@ def test_the_outlook_says_how_close_the_cap_is() -> None:
     assert cap["value"] == 1.6
     assert cap["limit"] == 2.0
     assert cap["when"] == "above"
+
+
+def cold_evening(supply: float = 15.0, **overrides: Any) -> Inputs:
+    """A frosty evening with the compressor standing still and the house warm."""
+    defaults: dict[str, Any] = {
+        "now": EVENING,
+        "outdoor": read(-0.3),
+        "extract": read(21.4),
+        "supply_air": read(supply),
+        "heat_release": read(True),
+    }
+    defaults.update(overrides)
+    return given(**defaults)
+
+
+def test_the_fan_pauses_on_a_cold_evening() -> None:
+    decision, state = run(cold_evening())
+    assert decision.fan_level == 0
+    assert decision.fan_reason is FanReason.DRAFT_PAUSE
+    assert decision.fan_capped_from == 2
+    assert state.draft_paused is True
+
+
+def test_outside_the_window_the_fan_is_only_capped() -> None:
+    decision, state = run(cold_evening(now=NOON))
+    assert decision.fan_level == 1
+    assert decision.fan_reason is FanReason.DRAFT_PROTECTION
+    assert state.draft_paused is False
+
+
+def test_supply_air_between_the_cap_and_the_pause_is_only_capped() -> None:
+    decision, state = run(cold_evening(supply=18.5))
+    assert decision.fan_level == 1
+    assert decision.fan_reason is FanReason.DRAFT_PROTECTION
+    assert state.draft_paused is False
+
+
+def test_a_pause_does_not_ask_the_supply_air_again() -> None:
+    # Without air moving the sensor reads the still air in the unit, which
+    # warms up. Asking it would start the fan, and the fan would stop again.
+    decision, state = run(cold_evening(supply=21.0), state=EngineState(draft_paused=True))
+    assert decision.fan_level == 0
+    assert state.draft_paused is True
+
+
+def test_the_cap_stands_once_a_pause_ends() -> None:
+    _, state = run(cold_evening(supply=21.0), state=EngineState(draft_paused=True))
+    assert state.draft_capped is True
+
+
+def test_a_running_compressor_ends_the_pause() -> None:
+    paused = EngineState(draft_paused=True, draft_capped=True)
+    decision, state = run(cold_evening(compressor_running=read(True)), state=paused)
+    assert decision.fan_level > 0
+    assert state.draft_paused is False
+
+
+def test_an_unreadable_compressor_is_no_reason_to_pause() -> None:
+    decision, _ = run(cold_evening(compressor_running=read(None)))
+    assert decision.fan_level == 2
+
+
+def test_a_room_falling_short_of_its_target_ends_the_pause() -> None:
+    # At stage 0 the unit stops the compressor rather than raise the fan, so
+    # left paused the room would never be heated.
+    paused = EngineState(draft_paused=True, draft_capped=True)
+    cold = cold_evening(rooms=(a_room(temperature=read(19.4)),))
+    decision, state = run(cold, state=paused)
+    assert decision.fan_level == 1
+    assert state.draft_paused is False
+
+
+def test_a_room_just_below_its_target_keeps_the_pause() -> None:
+    decision, _ = run(cold_evening(rooms=(a_room(temperature=read(19.6)),)))
+    assert decision.fan_level == 0
+
+
+def test_a_room_on_its_own_heating_does_not_end_the_pause() -> None:
+    bath = a_room("bad", temperature=read(17.0), actuator=ActuatorKind.GENERIC)
+    decision, _ = run(cold_evening(rooms=(a_room(), bath)))
+    assert decision.fan_level == 0
+
+
+def test_with_presence_sensors_the_fan_pauses_only_for_someone() -> None:
+    nobody, _ = run(cold_evening(presence=(read(False),)))
+    assert nobody.fan_level == 1
+    somebody, _ = run(cold_evening(presence=(read(False), read(True))))
+    assert somebody.fan_level == 0
+
+
+def test_someone_who_just_left_still_counts() -> None:
+    decision, _ = run(cold_evening(presence=(read(False, stable=timedelta(minutes=2)),)))
+    assert decision.fan_level == 0
+    decision, _ = run(cold_evening(presence=(read(False, stable=timedelta(minutes=10)),)))
+    assert decision.fan_level == 1
+
+
+def test_an_unreadable_presence_sensor_sees_no_one() -> None:
+    decision, _ = run(cold_evening(presence=(read(None),)))
+    assert decision.fan_level == 1
+
+
+def test_humidity_ends_a_pause() -> None:
+    bath = a_room("bad", humidity=read(76.0))
+    decision, _ = run(cold_evening(rooms=(a_room(), bath)))
+    assert decision.fan_level == 3
+    assert decision.fan_reason is FanReason.HUMIDITY_HIGH
+
+
+def test_co2_gets_the_cap_rather_than_the_air_quality_stage() -> None:
+    room = a_room(co2=read(1400.0))
+    since = EngineState(co2_high_since={"wohnzimmer": EVENING - CO2_DWELL - BRIEF})
+    decision, _ = run(cold_evening(rooms=(room,)), state=since)
+    assert decision.fan_level == 1
+    assert decision.fan_reason is FanReason.CO2_HIGH
+    assert decision.fan_capped_from == 3
+
+
+def test_a_boost_wins_over_the_pause() -> None:
+    decision, _ = run(cold_evening(), fan_request=FanMode.BOOST)
+    assert decision.fan_level == 3
+
+
+def test_the_pause_runs_until_midnight() -> None:
+    late = datetime(2026, 1, 15, 23, 50)
+    after = datetime(2026, 1, 16, 0, 10)
+    assert run(cold_evening(now=late))[0].fan_level == 0
+    assert run(cold_evening(now=after))[0].fan_level == 1
+
+
+def test_the_pause_is_a_setting() -> None:
+    hub = {CONF_DRAFT_PAUSE_START: "20:00:00", CONF_DRAFT_PAUSE_END: "22:00:00"}
+    assert run(cold_evening(), hub=hub)[0].fan_level == 1
+    assert run(cold_evening(now=NIGHT - BRIEF), hub=hub)[0].fan_level == 0
+    decision, _ = run(cold_evening(), hub={CONF_DRAFT_PAUSE_BELOW: 7.0})
+    assert decision.fan_level == 1
+    assert decision.settings["draft_pause_below"]["source"] == "hub"
+
+
+def test_the_outlook_says_how_close_the_pause_is() -> None:
+    pause = thresholds(run(cold_evening(supply=18.5))[0])["fan_draft_pause"]
+    assert pause["value"] == 2.9
+    assert pause["limit"] == 4.0
 
 
 ################################################################################

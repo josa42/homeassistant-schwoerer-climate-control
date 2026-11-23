@@ -66,6 +66,7 @@ from .const import (
     CONF_CONTACTS,
     CONF_COOL_RELEASE_SWITCH,
     CONF_DECLINED_ENTITIES,
+    CONF_DRAFT_PAUSE_PRESENCE,
     CONF_DRY_RUN,
     CONF_EXTRACT_TEMPERATURE_SENSOR,
     CONF_FORECAST_ENTITY,
@@ -91,6 +92,7 @@ from .const import (
     ISSUE_UNSAVED_SUGGESTION,
     MIN_WRITE_INTERVAL,
     NOTIFY_WINDOW,
+    PRESENCE_HOLD,
     STUCK_AFTER,
     SUBENTRY_TYPE_ROOM,
     TICK_INTERVAL,
@@ -595,6 +597,11 @@ class ClimateControlCoordinator(DataUpdateCoordinator[SystemDecision]):
             heat_release=self._binary(config.get(CONF_HEAT_RELEASE_SWITCH)) or Reading(),
             cool_release=self._binary(config.get(CONF_COOL_RELEASE_SWITCH)) or Reading(),
             compressor_running=self._compressor(),
+            presence=tuple(
+                reading
+                for entity in config.get(CONF_DRAFT_PAUSE_PRESENCE) or []
+                if (reading := self._binary(entity)) is not None
+            ),
             rooms=rooms,
         )
 
@@ -1047,6 +1054,7 @@ class ClimateControlCoordinator(DataUpdateCoordinator[SystemDecision]):
                 CONF_OPERATION_MODE_SELECT,
             )
         ]
+        entities.extend(config.get(CONF_DRAFT_PAUSE_PRESENCE) or [])
         for room in self.rooms.values():
             entities.append(room.config.get(CONF_CLIMATE_ENTITY))
             entities.append(room.config.get(CONF_TEMPERATURE_SENSOR))
@@ -1083,6 +1091,19 @@ class ClimateControlCoordinator(DataUpdateCoordinator[SystemDecision]):
                 async_call_later(
                     self.hass,
                     CONTACT_DWELL.total_seconds() + 5,
+                    self._after_contact_dwell,
+                )
+            )
+
+        # The same for someone leaving the sofa, who counts as there for a few
+        # minutes more.
+        if event.data.get("entity_id") in (
+            self.hub_config.get(CONF_DRAFT_PAUSE_PRESENCE) or []
+        ):
+            self._unsubscribe.append(
+                async_call_later(
+                    self.hass,
+                    PRESENCE_HOLD.total_seconds() + 5,
                     self._after_contact_dwell,
                 )
             )

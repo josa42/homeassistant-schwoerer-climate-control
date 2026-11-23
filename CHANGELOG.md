@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Added
+
+- **Draft pause.** On a cold evening, with the heat pump standing still, the
+  supply air arrives so far below the room that stage 1 still feels like a
+  draft. From 18:00 to 24:00, once it is more than 4 K below the extract air,
+  the fan stops. Optionally only while a presence sensor sees someone, under
+  *Presence where a draft is felt*. A running compressor, a room of the unit
+  0.5 K short of its target, humidity and a boost end it; CO₂ raises the fan to
+  stage 1 only. The threshold and the window are settings on the hub, and the
+  decision names it as `draft_pause`.
+
 ### Fixed
 
 - A night window saved through the options form, which hands over seconds, no

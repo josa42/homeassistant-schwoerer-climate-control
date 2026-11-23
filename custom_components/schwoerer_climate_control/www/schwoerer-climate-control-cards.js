@@ -404,6 +404,7 @@ const OUTLOOK = {
     fan_heat_cap: ["Lüftung gedrosselt", (t) => `ab ${t.limit} wärmer draußen als in der Abluft, jetzt ${t.value}`],
     fan_off: ["Lüftung steht", (t) => `ab ${t.limit} wärmer draußen als in der Abluft, jetzt ${t.value}`],
     fan_draft_cap: ["Zuluft zu kalt", (t) => `ab ${t.limit} kälter als die Abluft, solange die Wärmepumpe steht, jetzt ${t.value}`],
+    fan_draft_pause: ["Lüftung pausiert", (t) => `ab ${t.limit} kälter als die Abluft, im Zeitfenster, jetzt ${t.value}`],
     cool_release_on: ["Kühlen beginnt", (t) => `ab ${t.limit} im wärmsten Raum, jetzt ${t.value}`],
     cool_release_off: ["Kühlen endet", (t) => `unter ${t.limit} im wärmsten Raum, jetzt ${t.value}`],
     surplus_on: ["PV-Überschuss reicht", (t) => `ab ${t.limit}, jetzt ${t.value}`],
@@ -429,6 +430,7 @@ const OUTLOOK = {
     fan_heat_cap: ["Fan capped", (t) => `from ${t.limit} warmer outdoors than the extract air, now ${t.value}`],
     fan_off: ["Fan stops", (t) => `from ${t.limit} warmer outdoors than the extract air, now ${t.value}`],
     fan_draft_cap: ["Supply air too cold", (t) => `from ${t.limit} colder than the extract air while the heat pump stands, now ${t.value}`],
+    fan_draft_pause: ["Fan pauses", (t) => `from ${t.limit} colder than the extract air, within the window, now ${t.value}`],
     cool_release_on: ["Cooling starts", (t) => `from ${t.limit} in the warmest room, now ${t.value}`],
     cool_release_off: ["Cooling ends", (t) => `below ${t.limit} in the warmest room, now ${t.value}`],
     surplus_on: ["Enough PV surplus", (t) => `from ${t.limit}, now ${t.value}`],
@@ -1055,6 +1057,7 @@ const SENTENCES = {
       heat_pump: (v) => `Luftstufe ${v.level}, angehoben weil die Wärmepumpe läuft`,
       heat_protection: (v) => `Luftstufe ${v.level}, gedrosselt: draußen ist es wärmer`,
       draft_protection: (v) => `Luftstufe ${v.level}, gedrosselt: die Zuluft ist kalt`,
+      draft_pause: (v) => `Lüftung pausiert: die Zuluft ist zu kalt`,
       holiday: (v) => `Luftstufe ${v.level}, Urlaub`,
       night: (v) => `Luftstufe ${v.level}, Nacht`,
       normal: (v) => `Luftstufe ${v.level}`,
@@ -1111,6 +1114,7 @@ const SENTENCES = {
       heat_pump: (v) => `Fan level ${v.level}, raised because the heat pump runs`,
       heat_protection: (v) => `Fan level ${v.level}, capped: it is warmer outdoors`,
       draft_protection: (v) => `Fan level ${v.level}, capped: the supply air is cold`,
+      draft_pause: (v) => `Fan paused: the supply air is too cold`,
       holiday: (v) => `Fan level ${v.level}, holiday`,
       night: (v) => `Fan level ${v.level}, night`,
       normal: (v) => `Fan level ${v.level}`,
@@ -1494,7 +1498,7 @@ class HeatPumpCard extends SccCard {
     if (supply !== null) why.push([true, s.temps({ supply: deg(hass, supply), condenser: m.unit.temperature_t8_condenser ? deg(hass, numberOf(m.unit.temperature_t8_condenser)) : "" })]);
     const hint = heatOn && !running && a.is_night && Number(a.fan_level) < 2 ? ` ${w.stageOneObserved}` : "";
 
-    const leverHtml = levers(hass, m.hub, ["heat_release_off", "heat_release_on", "forecast_blocks", "cool_release_on", "cool_release_off", "surplus_on", "fan_heat_cap", "fan_off", "fan_draft_cap", "release_lockout_ends", "night_starts", "night_ends"], 4).map((l) => l.html).join("");
+    const leverHtml = levers(hass, m.hub, ["heat_release_off", "heat_release_on", "forecast_blocks", "cool_release_on", "cool_release_off", "surplus_on", "fan_heat_cap", "fan_off", "fan_draft_cap", "fan_draft_pause", "release_lockout_ends", "night_starts", "night_ends"], 4).map((l) => l.html).join("");
 
     return `<div class="split"><span class="title">${esc(w.heatPump)}</span><span class="lead">${esc(w.heatPumpLead)}</span></div>
       <div class="grid" style="--min:260px;gap:16px">

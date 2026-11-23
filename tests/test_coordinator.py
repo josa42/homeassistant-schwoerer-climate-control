@@ -16,6 +16,7 @@ from pytest_homeassistant_custom_component.common import (
 
 from custom_components.schwoerer_climate_control.const import (
     CONF_AUX_HOUSE_SWITCH,
+    CONF_DRAFT_PAUSE_PRESENCE,
     CONF_SUPPLY_AIR_SENSOR,
     CONF_SURPLUS_ENTITY,
     DOMAIN,
@@ -768,3 +769,34 @@ async def test_an_energy_managers_signal_drives_the_rooms(
     missing = hass.states.get("binary_sensor.schworer_climate_control_inputs_missing")
     assert missing.state == "on"
     assert "surplus" in missing.attributes["failed_inputs"]
+
+
+SOFA = "binary_sensor.sofa_presence"
+
+
+async def test_the_presence_sensors_are_read_and_watched(
+    hass: HomeAssistant, unit
+) -> None:
+    unit()
+    hass.states.async_set(SOFA, "on")
+    mock_entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="Schwörer Climate Control",
+        data={**HUB_DATA, CONF_DRAFT_PAUSE_PRESENCE: [SOFA]},
+        subentries_data=[
+            ConfigSubentryData(
+                data=ROOM_DATA,
+                subentry_type=SUBENTRY_TYPE_ROOM,
+                title="Wohnzimmer",
+                unique_id=None,
+            )
+        ],
+    )
+    mock_entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(mock_entry.entry_id)
+    await hass.async_block_till_done()
+    coordinator = mock_entry.runtime_data
+
+    assert SOFA in coordinator.watched_entities()
+    inputs = await coordinator._gather()
+    assert [reading.value for reading in inputs.presence] == [True]
