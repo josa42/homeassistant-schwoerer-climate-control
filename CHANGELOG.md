@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- A night window saved through the options form, which hands over seconds, no
+  longer fails to parse.
+
 ## 1.10.0 - 2026-11-18
 
 ### Added

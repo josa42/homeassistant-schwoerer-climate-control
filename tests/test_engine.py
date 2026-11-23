@@ -255,6 +255,13 @@ def test_night_setback() -> None:
     assert decision.is_night is True
 
 
+def test_a_night_window_with_seconds_is_read() -> None:
+    # The time selector of the options form hands over "21:00:00".
+    hub = {"night_start": "21:00:00", "night_end": "05:00:00"}
+    assert run(given(now=NIGHT), hub=hub)[0].is_night is True
+    assert run(given(now=NIGHT - timedelta(hours=1, minutes=30)), hub=hub)[0].is_night is False
+
+
 def test_without_the_night_setback_a_room_keeps_its_day_setpoint() -> None:
     decision, _ = run(given(now=NIGHT), night_setback=False)
     room = decision.rooms[0]

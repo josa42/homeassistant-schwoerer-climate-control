@@ -183,7 +183,9 @@ class EngineState:
 
 
 def _parse_time(value: str) -> time:
-    hour, _, minute = str(value).partition(":")
+    # The time selector hands over seconds as well, "20:00:00".
+    hour, _, rest = str(value).partition(":")
+    minute = rest.partition(":")[0]
     return time(int(hour), int(minute or 0))
 
 
