@@ -570,6 +570,7 @@ def _aux_needed(
     running: bool,
     progress: AuxProgress | None,
     forced: bool = False,
+    air_still: bool = False,
 ) -> tuple[bool, list[Gate], str, AuxProgress | None]:
     """Whether a room needs more heat than the supply air is bringing it.
 
@@ -618,6 +619,13 @@ def _aux_needed(
             Gate("aux_override", True, f"{deficit:.1f} K short, at least {override} K")
         )
         return True, gates, f"the room is {deficit:.1f} K short", None
+
+    if air_still:
+        # With the fan stopped the supply sensor reads the still air in the
+        # unit, which stays warm long after the compressor stopped, and the
+        # room gets nothing from the heat pump.
+        gates.append(Gate("aux_supply_insufficient", True, "the fan is stopped"))
+        return True, gates, f"the room is {deficit:.1f} K short and the fan is stopped", None
 
     if supply is None:
         # Not knowing the supply air leaves the decision to the room, which is
@@ -705,6 +713,7 @@ def _room_decision(
     night_setback: bool = True,
     aux_at_night: bool = True,
     supply: float | None = None,
+    air_still: bool = False,
     aux_since: datetime | None = None,
     aux_progress: AuxProgress | None = None,
 ) -> tuple[RoomDecision, bool, AuxProgress | None]:
@@ -878,6 +887,7 @@ def _room_decision(
                 running=running,
                 progress=aux_progress,
                 forced=forced,
+                air_still=air_still,
             )
             gates.extend(need_gates)
         if not allowed:
@@ -922,7 +932,7 @@ def _room_decision(
         temperature=temperature,
         target=target,
         outdoor=outdoor,
-        supply=supply,
+        supply=None if air_still else supply,
         window_open=window_open,
         wgt_room=room.actuator is ActuatorKind.WGT_ROOM,
         heater_on=auxiliary is True,
@@ -1649,6 +1659,11 @@ def evaluate(
     supply = None if inputs.supply_air is None else inputs.supply_air.as_number()
     if inputs.supply_air is not None and supply is None:
         degraded.append("supply_air")
+    # Whether the fan stood still until now. The pause is the one decided last
+    # time, because this one waits on the rooms.
+    air_still = state.draft_paused or (
+        not isinstance(fan_request, FanMode) and int(fan_request) == 0
+    )
 
     decided = [
         _room_decision(
@@ -1664,6 +1679,7 @@ def evaluate(
             night_setback=night_setback,
             aux_at_night=aux_at_night,
             supply=supply,
+            air_still=air_still,
             aux_since=state.aux_needed_since.get(room.room_id),
             aux_progress=state.aux_progress.get(room.room_id),
         )

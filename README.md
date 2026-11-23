@@ -235,7 +235,10 @@ Whether the heater is still wanted is decided afresh, so a window opened or a
 setpoint lowered in the meantime still ends the wait.
 
 From *auxiliary heat regardless* (2 K) short the supply air no longer gets a say.
-Without a supply air reading the room decides alone.
+Without a supply air reading the room decides alone, and so it does while the
+fan stands at 0, fixed or paused against a draft: the sensor then reads the air
+standing in the unit, still warm from the compressor, and none of it reaches the
+room.
 
 ```mermaid
 flowchart TD

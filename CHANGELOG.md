@@ -17,6 +17,9 @@
 
 - A night window saved through the options form, which hands over seconds, no
   longer fails to parse.
+- A stopped fan no longer keeps the auxiliary heaters off. At stage 0 the
+  supply sensor reads the still air in the unit, warm from the compressor for a
+  while after it stopped, and that counted as the heat pump warming the rooms.
 
 ## 1.10.0 - 2026-11-18
 

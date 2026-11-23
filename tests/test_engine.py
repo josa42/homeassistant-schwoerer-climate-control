@@ -525,6 +525,23 @@ def test_a_running_auxiliary_heater_has_no_dwell_to_wait_out() -> None:
     assert decision.rooms[0].gate_passed("aux_dwell") is None
 
 
+def test_warm_still_air_behind_a_stopped_fan_is_not_supply_air() -> None:
+    # At stage 0 the sensor reads the air standing in the unit, still warm from
+    # the compressor, and nothing of it reaches the room.
+    inputs = given(supply_air=read(27.0), rooms=(a_cold_room(),))
+    decision, _ = run(inputs, state=waited("wohnzimmer"), fan_request=0)
+    room = decision.rooms[0]
+    assert room.auxiliary_heat is True
+    assert room.gate_passed("aux_supply_insufficient") is True
+
+
+def test_the_draft_pause_stops_the_supply_air_too() -> None:
+    inputs = given(supply_air=read(27.0), rooms=(a_cold_room(),))
+    paused = replace(waited("wohnzimmer"), draft_paused=True)
+    decision, _ = run(inputs, state=paused)
+    assert decision.rooms[0].auxiliary_heat is True
+
+
 def test_unreadable_supply_air_leaves_the_decision_to_the_room() -> None:
     inputs = given(supply_air=Reading(), rooms=(a_cold_room(),))
     decision, _ = run(inputs, state=waited("wohnzimmer"))
