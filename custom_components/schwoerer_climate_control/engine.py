@@ -20,11 +20,13 @@ from datetime import datetime, time, timedelta
 from typing import Any
 
 from .const import (
+    AUX_ALWAYS_HYSTERESIS,
     AUX_DWELL,
     AUX_PROGRESS_MIN_RISE,
     AUX_PROGRESS_WINDOW,
     AUX_SUPPLY_HYSTERESIS,
     CO2_DWELL,
+    CONF_AUX_ALWAYS_BELOW,
     CONF_AUX_DEFICIT,
     CONF_AUX_DEFICIT_OVERRIDE,
     CONF_AUX_HEAT_BELOW,
@@ -844,6 +846,12 @@ def _room_decision(
             and not room.auxiliary_enabled.missing
             and bool(room.auxiliary_enabled.value)
         )
+        # Frosty enough that the heater is released whatever the room says. The
+        # unit's own thermostat still decides whether it heats.
+        always_limit = config.number(CONF_AUX_ALWAYS_BELOW)
+        if running:
+            always_limit += AUX_ALWAYS_HYSTERESIS
+        always = outdoor is not None and outdoor < always_limit
         # With plenty of surplus the heater is not the expensive stage any more,
         # so what keeps it for the cold and the day does not apply. The mode
         # still does, and so does an open window: that heat would go outside.
@@ -854,8 +862,9 @@ def _room_decision(
             and energy is not EnergyLevel.BLOCKED
             and not window_open
             # Without a room temperature there is no way to tell whether the
-            # second stage is needed, and the expensive one stays off.
-            and temperature is not None
+            # second stage is needed, and the expensive one stays off, unless
+            # the frost has decided that already.
+            and (temperature is not None or always)
         )
         if energy is EnergyLevel.BLOCKED:
             gates.append(Gate("aux_energy_allows", False, "energy signal blocked"))
@@ -876,8 +885,18 @@ def _room_decision(
                 )
             )
 
+        gates.append(
+            Gate(
+                "aux_outdoor_always",
+                always,
+                f"{outdoor} < {always_limit}" if outdoor is not None else "no reading",
+            )
+        )
+
         needed = False
-        if temperature is not None:
+        if always:
+            needed, aux_why = True, f"it is {outdoor} °C outside"
+        elif temperature is not None:
             needed, need_gates, aux_why, progress = _aux_needed(
                 config,
                 now=now,
@@ -1025,6 +1044,9 @@ def _room_outlook(
     if outdoor is not None:
         thresholds.append(
             Threshold("aux_outdoor", outdoor, config.number(CONF_AUX_HEAT_BELOW), "°C", "above")
+        )
+        thresholds.append(
+            Threshold("aux_always", outdoor, config.number(CONF_AUX_ALWAYS_BELOW), "°C", "below")
         )
     if temperature is None:
         return tuple(thresholds), tuple(upcoming)

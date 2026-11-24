@@ -234,6 +234,14 @@ wait carries on from there when the last record is less than 15 minutes old.
 Whether the heater is still wanted is decided afresh, so a window opened or a
 setpoint lowered in the meantime still ends the wait.
 
+Below *auxiliary heat always below outdoors* (0 °C) neither the room nor the
+supply air gets a say: the heater is released, and the unit's own thermostat
+decides whether it heats. On a frosty day the heat pump alone does not keep up,
+and waiting for a room to fall short first only means it is cold before it gets
+warm. The release, the energy signal, an open window and the heater being off at
+night still hold, and so do the 15 minutes before it goes on. It stays released
+until it is 0.5 K warmer outside than the limit.
+
 From *auxiliary heat regardless* (2 K) short the supply air no longer gets a say.
 Without a supply air reading the room decides alone, and so it does while the
 fan stands at 0, fixed or paused against a draft: the sensor then reads the air

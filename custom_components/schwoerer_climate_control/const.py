@@ -60,6 +60,11 @@ PRESENCE_HOLD = timedelta(minutes=5)
 #: for when it does not: at stage 0 the compressor cannot run.
 DRAFT_PAUSE_ROOM_DEFICIT = 0.5
 
+#: How much warmer it has to get outside before heaters released for the cold
+#: are left to the room again. Without it the release flips with every tenth the
+#: outdoor reading moves around the limit.
+AUX_ALWAYS_HYSTERESIS = 0.5
+
 #: How much more the supply air has to bring before a running auxiliary heater
 #: is withdrawn for it, on top of the margin that switched it on. Without it the
 #: heater flips with every tenth the supply air moves around the margin.
@@ -373,6 +378,10 @@ CONF_AUX_DEFICIT_OVERRIDE = "aux_deficit_override"
 #: How much warmer than the room the supply air has to be for the heat pump to
 #: be trusted with it. Below this the ventilation brings next to no heat.
 CONF_AUX_SUPPLY_MARGIN = "aux_supply_margin"
+#: Below this outdoors the heaters are released whatever the room and the supply
+#: air say. On a frosty day the heat pump alone cannot keep up, and waiting for a
+#: room to fall short first only means it is cold before it gets warm.
+CONF_AUX_ALWAYS_BELOW = "aux_always_below"
 CONF_COOL_RELEASE_ABOVE = "cool_release_above"
 
 #: Below this room temperature the house is protected whatever the mode says.
@@ -451,6 +460,7 @@ DEFAULTS: dict[str, object] = {
     CONF_AUX_DEFICIT: 0.5,
     CONF_AUX_DEFICIT_OVERRIDE: 2.0,
     CONF_AUX_SUPPLY_MARGIN: 5.0,
+    CONF_AUX_ALWAYS_BELOW: 0.0,
     CONF_COOL_RELEASE_ABOVE: 26.0,
     CONF_FROST_PROTECTION_BELOW: 12.0,
     CONF_FAN_NORMAL: 2,
@@ -506,6 +516,7 @@ OVERRIDABLE: tuple[str, ...] = (
     CONF_AUX_DEFICIT,
     CONF_AUX_DEFICIT_OVERRIDE,
     CONF_AUX_SUPPLY_MARGIN,
+    CONF_AUX_ALWAYS_BELOW,
     CONF_FROST_PROTECTION_BELOW,
     CONF_HUMIDITY_HIGH,
     CONF_CO2_HIGH,

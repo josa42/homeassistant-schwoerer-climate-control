@@ -401,6 +401,7 @@ const OUTLOOK = {
     forecast_counts: ["Prognose zählt", (t) => `erst ab ${t.limit} draußen, jetzt ${t.value}`],
     forecast_blocks: ["Prognose sperrt", (t) => `Höchstwert ab ${t.limit}, heute ${t.value}`],
     aux_outdoor: ["Zuheizer gesperrt", (t) => `ab ${t.limit} draußen, jetzt ${t.value}`],
+    aux_always: ["Zuheizer immer frei", (t) => `unter ${t.limit} draußen, jetzt ${t.value}`],
     fan_heat_cap: ["Lüftung gedrosselt", (t) => `ab ${t.limit} wärmer draußen als in der Abluft, jetzt ${t.value}`],
     fan_off: ["Lüftung steht", (t) => `ab ${t.limit} wärmer draußen als in der Abluft, jetzt ${t.value}`],
     fan_draft_cap: ["Zuluft zu kalt", (t) => `ab ${t.limit} kälter als die Abluft, solange die Wärmepumpe steht, jetzt ${t.value}`],
@@ -427,6 +428,7 @@ const OUTLOOK = {
     forecast_counts: ["Forecast counts", (t) => `only from ${t.limit} outdoors, now ${t.value}`],
     forecast_blocks: ["Forecast blocks", (t) => `high from ${t.limit}, today ${t.value}`],
     aux_outdoor: ["Aux heaters locked", (t) => `from ${t.limit} outdoors, now ${t.value}`],
+    aux_always: ["Aux heaters always released", (t) => `below ${t.limit} outdoors, now ${t.value}`],
     fan_heat_cap: ["Fan capped", (t) => `from ${t.limit} warmer outdoors than the extract air, now ${t.value}`],
     fan_off: ["Fan stops", (t) => `from ${t.limit} warmer outdoors than the extract air, now ${t.value}`],
     fan_draft_cap: ["Supply air too cold", (t) => `from ${t.limit} colder than the extract air while the heat pump stands, now ${t.value}`],
@@ -1071,6 +1073,7 @@ const SENTENCES = {
       plain: (v) => `${v.deficit} unter Soll`,
       boost: () => "Boost, bis er ausgeschaltet wird",
       forced: (v) => `${v.deficit} unter Soll, und es ist viel Strom übrig`,
+      always: (v) => `Draußen ${v.outdoor}, da ist er immer frei`,
     },
     auxWaiting: (v) => `Wartet noch ${v.left}, dann an`,
     auxWatching: (v) => `Zuluft ${v.lift} wärmer als der Raum, die Wärmepumpe soll es schaffen. Raum wird beobachtet: ${v.rise} von ${v.need} gestiegen.`,
@@ -1128,6 +1131,7 @@ const SENTENCES = {
       plain: (v) => `${v.deficit} below target`,
       boost: () => "Boost, until it is switched off",
       forced: (v) => `${v.deficit} below target, with plenty of surplus`,
+      always: (v) => `${v.outdoor} outdoors, where it is always released`,
     },
     auxWaiting: (v) => `Waiting another ${v.left}, then on`,
     auxWatching: (v) => `Supply air ${v.lift} above the room, the heat pump should manage. Watching the room: risen ${v.rise} of ${v.need}.`,
@@ -1208,6 +1212,7 @@ function auxStatus(hass, hub, room) {
   if (a.auxiliary_heat) {
     let why = s.auxRunningWhy.plain({ deficit: kelvin(hass, deficit) });
     if (a.reason_code === "boost") why = s.auxRunningWhy.boost();
+    else if (gate(room.state, "aux_outdoor_always")?.passed && thr.aux_always) why = s.auxRunningWhy.always({ outdoor: deg(hass, thr.aux_always.value) });
     else if (gate(room.state, "aux_surplus_forced")?.passed) why = s.auxRunningWhy.forced({ deficit: kelvin(hass, deficit) });
     else if (gate(room.state, "aux_override")?.passed) why = s.auxRunningWhy.override({ deficit: kelvin(hass, deficit) });
     else if (gate(room.state, "aux_not_catching_up")?.passed) why = s.auxRunningWhy.stalled();
@@ -1250,7 +1255,7 @@ function deltaText(hass, room) {
   return delta < 0 ? [w.tooCold(kelvin(hass, -delta)), delta <= -0.5 ? "orange" : ""] : [w.tooWarm(kelvin(hass, delta)), ""];
 }
 
-const ROOM_LEVERS = ["aux_on", "aux_verdict", "aux_wanted", "aux_override", "aux_supply", "aux_rise", "aux_reached", "aux_outdoor", "frost_protection", "night_starts", "night_ends"];
+const ROOM_LEVERS = ["aux_on", "aux_verdict", "aux_wanted", "aux_override", "aux_supply", "aux_rise", "aux_reached", "aux_outdoor", "aux_always", "frost_protection", "night_starts", "night_ends"];
 
 ////////////////////////////////////////////////////////////////////////////////
 // Needs attention: only there when something does

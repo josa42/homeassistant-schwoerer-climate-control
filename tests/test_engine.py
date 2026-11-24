@@ -12,6 +12,7 @@ from custom_components.schwoerer_climate_control.const import (
     AUX_DWELL,
     AUX_PROGRESS_WINDOW,
     CO2_DWELL,
+    CONF_AUX_ALWAYS_BELOW,
     CONF_AUX_HEAT_OFF_AT_NIGHT,
     CONF_BLOCKED_TARGET_DROP,
     CONF_CO2_HIGH,
@@ -325,6 +326,57 @@ def test_the_auxiliary_heater_stays_off_when_it_is_not_cold_enough() -> None:
     assert decision.heat_release is True
     assert decision.rooms[0].auxiliary_heat is False
     assert decision.rooms[0].gate_passed("aux_outdoor_cold") is False
+
+
+def test_below_freezing_the_heater_is_released_whatever_the_room_says() -> None:
+    # A room at its setpoint, with warm supply air: nothing else would release it.
+    warm = a_room(temperature=read(21.0), auxiliary_enabled=read(False))
+    inputs = given(outdoor=read(-2.0), supply_air=read(35.0), rooms=(warm,))
+    decision, _ = run(inputs, state=waited("wohnzimmer"))
+    room = decision.rooms[0]
+    assert room.auxiliary_heat is True
+    assert room.gate_passed("aux_outdoor_always") is True
+    assert room.gate_passed("aux_room_below_target") is None
+
+
+def test_above_the_limit_the_room_decides_again() -> None:
+    warm = a_room(temperature=read(21.0), auxiliary_enabled=read(False))
+    decision, _ = run(given(outdoor=read(0.5), rooms=(warm,)), state=waited("wohnzimmer"))
+    assert decision.rooms[0].auxiliary_heat is False
+    assert decision.rooms[0].gate_passed("aux_outdoor_always") is False
+
+
+def test_a_released_heater_holds_until_it_is_clearly_warmer_outside() -> None:
+    running = a_room(temperature=read(21.0), auxiliary_enabled=read(True))
+    held, _ = run(given(outdoor=read(0.3), rooms=(running,)))
+    assert held.rooms[0].auxiliary_heat is True
+    lifted, _ = run(given(outdoor=read(0.6), rooms=(running,)))
+    assert lifted.rooms[0].auxiliary_heat is False
+
+
+def test_the_frost_release_still_waits_for_the_dwell() -> None:
+    warm = a_room(temperature=read(21.0), auxiliary_enabled=read(False))
+    decision, state = run(given(outdoor=read(-2.0), rooms=(warm,)))
+    assert decision.rooms[0].auxiliary_heat is False
+    assert state.aux_needed_since == {"wohnzimmer": NOON}
+
+
+def test_the_frost_release_keeps_the_window_and_the_night() -> None:
+    open_room = a_room(contacts=(read(True),), auxiliary_enabled=read(False))
+    decision, _ = run(given(outdoor=read(-2.0), rooms=(open_room,)), state=waited("wohnzimmer"))
+    assert decision.rooms[0].auxiliary_heat is False
+    bedroom = a_room(config={CONF_AUX_HEAT_OFF_AT_NIGHT: True}, auxiliary_enabled=read(False))
+    state = waited("wohnzimmer", now=NIGHT)
+    decision, _ = run(given(now=NIGHT, outdoor=read(-2.0), rooms=(bedroom,)), state=state)
+    assert decision.rooms[0].auxiliary_heat is False
+
+
+def test_the_frost_release_is_a_setting() -> None:
+    warm = a_room(temperature=read(21.0), auxiliary_enabled=read(False))
+    inputs = given(outdoor=read(-2.0), rooms=(warm,))
+    decision, _ = run(inputs, hub={CONF_AUX_ALWAYS_BELOW: -5.0}, state=waited("wohnzimmer"))
+    assert decision.rooms[0].auxiliary_heat is False
+    assert thresholds(decision.rooms[0])["aux_always"]["limit"] == -5.0
 
 
 def test_the_auxiliary_heater_is_off_at_night_in_a_bedroom() -> None:

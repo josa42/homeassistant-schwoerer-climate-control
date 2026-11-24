@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Auxiliary heat always below outdoors**, a setting on the hub and per room,
+  0 °C by default. Colder than that outside, the auxiliary heaters are released
+  whatever the room temperature and the supply air say, and the unit's own
+  thermostat decides whether they heat. The release, the energy signal, an open
+  window, the night and the 15-minute wait still apply.
+
 ## 1.11.0 - 2026-11-23
 
 ### Added

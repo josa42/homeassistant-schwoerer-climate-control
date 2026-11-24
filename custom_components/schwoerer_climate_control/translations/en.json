@@ -142,7 +142,8 @@
           "fan_draft_cap": "Fan level while the supply air is cold",
           "draft_pause_below": "Stop the fan when the supply air is colder than the extract air by",
           "draft_pause_start": "Stopping the fan against cold supply air from",
-          "draft_pause_end": "Stopping the fan against cold supply air until"
+          "draft_pause_end": "Stopping the fan against cold supply air until",
+          "aux_always_below": "Auxiliary heat always below outdoors"
         }
       }
     }
@@ -173,7 +174,8 @@
             "aux_deficit_override": "Auxiliary heat regardless from this far below target",
             "aux_supply_margin": "Supply air counts as heating above the room by",
             "humidity_high": "Humidity is high above",
-            "co2_high": "CO₂ is high above"
+            "co2_high": "CO₂ is high above",
+            "aux_always_below": "Auxiliary heat always below outdoors"
           },
           "data_description": {
             "temperature_sensor": "Optional. Left empty, the thermostat's own reading is used.",
@@ -181,7 +183,8 @@
             "aux_heat_off_at_night": "For a bedroom, where the second stage is not wanted while anyone is asleep.",
             "aux_deficit": "Optional. How far below its target the room has to be before its auxiliary heater is considered.",
             "aux_deficit_override": "Optional. From this far below its target the supply air no longer gets a say.",
-            "aux_supply_margin": "Optional. While the supply air is at least this much warmer than the room, the heat pump is left to warm it."
+            "aux_supply_margin": "Optional. While the supply air is at least this much warmer than the room, the heat pump is left to warm it.",
+            "aux_always_below": "Optional. Colder than this outdoors, the heater is released whatever the room and the supply air say."
           }
         },
         "reconfigure": {
@@ -207,7 +210,8 @@
             "aux_deficit_override": "Auxiliary heat regardless from this far below target",
             "aux_supply_margin": "Supply air counts as heating above the room by",
             "humidity_high": "Humidity is high above",
-            "co2_high": "CO₂ is high above"
+            "co2_high": "CO₂ is high above",
+            "aux_always_below": "Auxiliary heat always below outdoors"
           },
           "data_description": {
             "temperature_sensor": "Optional. Left empty, the thermostat's own reading is used.",
@@ -215,7 +219,8 @@
             "aux_heat_off_at_night": "For a bedroom, where the second stage is not wanted while anyone is asleep.",
             "aux_deficit": "Optional. How far below its target the room has to be before its auxiliary heater is considered.",
             "aux_deficit_override": "Optional. From this far below its target the supply air no longer gets a say.",
-            "aux_supply_margin": "Optional. While the supply air is at least this much warmer than the room, the heat pump is left to warm it."
+            "aux_supply_margin": "Optional. While the supply air is at least this much warmer than the room, the heat pump is left to warm it.",
+            "aux_always_below": "Optional. Colder than this outdoors, the heater is released whatever the room and the supply air say."
           }
         }
       },

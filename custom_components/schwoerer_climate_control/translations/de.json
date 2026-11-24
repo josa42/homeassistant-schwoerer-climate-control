@@ -142,7 +142,8 @@
           "fan_draft_cap": "Luftstufe solange die Zuluft kalt ist",
           "draft_pause_below": "Lüfter anhalten, wenn die Zuluft kälter ist als die Abluft um",
           "draft_pause_start": "Lüfter gegen kalte Zuluft anhalten ab",
-          "draft_pause_end": "Lüfter gegen kalte Zuluft anhalten bis"
+          "draft_pause_end": "Lüfter gegen kalte Zuluft anhalten bis",
+          "aux_always_below": "Zuheizer immer frei unter draußen"
         }
       }
     }
@@ -173,7 +174,8 @@
             "aux_deficit_override": "Zusatzheizer in jedem Fall ab so weit unter Soll",
             "aux_supply_margin": "Zuluft heizt ab so viel über dem Raum",
             "humidity_high": "Feuchte ist hoch über",
-            "co2_high": "CO₂ ist hoch über"
+            "co2_high": "CO₂ ist hoch über",
+            "aux_always_below": "Zuheizer immer frei unter draußen"
           },
           "data_description": {
             "temperature_sensor": "Optional. Leer gelassen wird der Messwert des Thermostats verwendet.",
@@ -181,7 +183,8 @@
             "aux_heat_off_at_night": "Für ein Schlafzimmer, in dem die zweite Stufe nachts nicht laufen soll.",
             "aux_deficit": "Optional. Wie weit der Raum unter seinem Soll liegen muss, bevor der Zusatzheizer in Frage kommt.",
             "aux_deficit_override": "Optional. Ab so weit unter Soll hat die Zuluft nichts mehr zu sagen.",
-            "aux_supply_margin": "Optional. Solange die Zuluft mindestens so viel wärmer als der Raum ist, heizt die Wärmepumpe ihn allein auf."
+            "aux_supply_margin": "Optional. Solange die Zuluft mindestens so viel wärmer als der Raum ist, heizt die Wärmepumpe ihn allein auf.",
+            "aux_always_below": "Optional. Ist es draußen kälter, ist der Zuheizer freigegeben, egal was Raum und Zuluft sagen."
           }
         },
         "reconfigure": {
@@ -207,7 +210,8 @@
             "aux_deficit_override": "Zusatzheizer in jedem Fall ab so weit unter Soll",
             "aux_supply_margin": "Zuluft heizt ab so viel über dem Raum",
             "humidity_high": "Feuchte ist hoch über",
-            "co2_high": "CO₂ ist hoch über"
+            "co2_high": "CO₂ ist hoch über",
+            "aux_always_below": "Zuheizer immer frei unter draußen"
           },
           "data_description": {
             "temperature_sensor": "Optional. Leer gelassen wird der Messwert des Thermostats verwendet.",
@@ -215,7 +219,8 @@
             "aux_heat_off_at_night": "Für ein Schlafzimmer, in dem die zweite Stufe nachts nicht laufen soll.",
             "aux_deficit": "Optional. Wie weit der Raum unter seinem Soll liegen muss, bevor der Zusatzheizer in Frage kommt.",
             "aux_deficit_override": "Optional. Ab so weit unter Soll hat die Zuluft nichts mehr zu sagen.",
-            "aux_supply_margin": "Optional. Solange die Zuluft mindestens so viel wärmer als der Raum ist, heizt die Wärmepumpe ihn allein auf."
+            "aux_supply_margin": "Optional. Solange die Zuluft mindestens so viel wärmer als der Raum ist, heizt die Wärmepumpe ihn allein auf.",
+            "aux_always_below": "Optional. Ist es draußen kälter, ist der Zuheizer freigegeben, egal was Raum und Zuluft sagen."
           }
         }
       },

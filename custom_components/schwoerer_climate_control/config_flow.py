@@ -30,6 +30,7 @@ from homeassistant.helpers import selector
 from .const import (
     CONF_ACTUATOR,
     CONF_ADD_ROOMS,
+    CONF_AUX_ALWAYS_BELOW,
     CONF_AUX_DEFICIT,
     CONF_AUX_DEFICIT_OVERRIDE,
     CONF_AUX_HEAT_BELOW,
@@ -263,6 +264,7 @@ def thresholds_schema(values: Mapping[str, Any]) -> vol.Schema:
         CONF_AUX_DEFICIT: _kelvin(0, 5),
         CONF_AUX_DEFICIT_OVERRIDE: _kelvin(0, 10),
         CONF_AUX_SUPPLY_MARGIN: _kelvin(0, 20),
+        CONF_AUX_ALWAYS_BELOW: _temperature(-30, 20),
         CONF_COOL_RELEASE_ABOVE: _temperature(),
         CONF_FAN_NORMAL: _stage(),
         CONF_FAN_HOLIDAY: _stage(),
@@ -357,6 +359,7 @@ def room_schema(values: Mapping[str, Any]) -> vol.Schema:
     _optional(schema, CONF_AUX_DEFICIT, values, _kelvin(0, 5))
     _optional(schema, CONF_AUX_DEFICIT_OVERRIDE, values, _kelvin(0, 10))
     _optional(schema, CONF_AUX_SUPPLY_MARGIN, values, _kelvin(0, 20))
+    _optional(schema, CONF_AUX_ALWAYS_BELOW, values, _temperature(-30, 20))
     _optional(schema, CONF_HUMIDITY_HIGH, values, selector.NumberSelector(
         selector.NumberSelectorConfig(min=30, max=100, step=1, unit_of_measurement="%")
     ))
