@@ -12,6 +12,7 @@ from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
     async_fire_time_changed,
+    mock_restore_cache,
 )
 
 from custom_components.schwoerer_climate_control.const import (
@@ -52,6 +53,26 @@ async def test_the_first_evaluation_never_writes(
     unit(target=14.0)
     await setup_entry(entry)
     assert calls == []
+
+
+async def test_a_restart_acts_only_once_every_control_has_restored(
+    hass: HomeAssistant, entry, unit, calls, setup_entry
+) -> None:
+    # The mode restores before the holiday switch does. Acting on the mode alone
+    # would raise the room to its everyday target, and the holiday switch would
+    # lower it again a minute later.
+    mock_restore_cache(
+        hass,
+        (
+            State("select.schworer_climate_control_mode", Mode.HEATING.value),
+            State("switch.schworer_climate_control_holiday", "on"),
+        ),
+    )
+    unit(target=18.0, hvac_mode="heat", heat="on", function="heating")
+    coordinator = await setup_entry(entry)
+
+    assert coordinator.holiday is True
+    assert [call for call in calls if call.service == "set_temperature"] == []
 
 
 async def test_a_settled_house_is_not_written_to(hass: HomeAssistant, start) -> None:

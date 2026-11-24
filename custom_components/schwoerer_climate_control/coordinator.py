@@ -195,7 +195,9 @@ class ClimateControlCoordinator(DataUpdateCoordinator[SystemDecision]):
         self._attempted: dict[str, Any] = {}
         self._stuck: dict[str, int] = {}
         self._rate_limited = False
-        self._evaluated = False
+        # Until every control has restored, evaluations only publish. See
+        # mark_restored.
+        self._restoring = True
 
         self.history: deque[SystemDecision] = deque(maxlen=DECISION_HISTORY)
         self._signatures: dict[str, tuple] = {}
@@ -253,6 +255,13 @@ class ClimateControlCoordinator(DataUpdateCoordinator[SystemDecision]):
 
     ############################################################################
     # Controls
+
+    def mark_restored(self) -> None:
+        """Let the next evaluation act, now that every control has restored.
+
+        Not this one: the setpoints restoring have already asked for one.
+        """
+        self._restoring = False
 
     def _act_now(self) -> None:
         """Evaluate at once, without the debounce the sensors go through.
@@ -919,12 +928,12 @@ class ClimateControlCoordinator(DataUpdateCoordinator[SystemDecision]):
 
     async def _apply(self, decision: SystemDecision) -> None:
         """Send what differs, paced, and keep track of what refuses to stick."""
-        if not self._evaluated:
-            # The first evaluation only ever publishes. The switches and selects
-            # that hold the mode, holiday and the fan request restore themselves
-            # after this runs, so acting now would act on defaults: a restart
-            # would write the ventilation mode over whatever was really set.
-            self._evaluated = True
+        if self._restoring:
+            # The switches and selects that hold the mode, holiday and the fan
+            # request restore one after another, and each one evaluates. Acting
+            # on any of those would act on the defaults of the ones still to
+            # come: the mode back before the holiday switch raised a room to its
+            # everyday target, and the holiday switch lowered it a minute later.
             return
 
         needed = [write for write in self.plan(decision) if self.needs_write(write)]

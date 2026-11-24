@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **A restart or a saved setting no longer writes half-restored controls.** The
+  controls restore one after another, and each one used to act at once. Saving
+  a setting at night set a room to its night target for a minute, because the
+  mode was back before the night setback switch. Nothing is written now until
+  every control has restored.
+
 ## 1.12.0 - 2026-11-24
 
 ### Added

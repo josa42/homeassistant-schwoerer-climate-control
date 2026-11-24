@@ -83,6 +83,7 @@ async def async_setup_entry(
     await coordinator.async_config_entry_first_refresh()
     await coordinator.async_start_watching()
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    coordinator.mark_restored()
     entry.async_on_unload(entry.add_update_listener(_async_reload))
     return True
 
